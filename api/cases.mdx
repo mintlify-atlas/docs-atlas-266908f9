@@ -193,13 +193,19 @@ After receiving the response, you can verify the fairness:
 See the [Provably Fair Verification](/technical/provably-fair/verification) guide for detailed verification steps.
 </Tip>
 
-## Notes
+## Implementation Notes
 
 <Warning>
-- The endpoint does not yet implement balance deduction or inventory management (see TODO comment in code)
-- Ensure users have sufficient balance before opening cases
-- The `game_rolls` table stores the actual server seed for later verification
+**Balance and Inventory Management**: The current implementation focuses on the provably fair roll calculation. Balance deduction and inventory management should be implemented as separate steps:
+- Check user balance before case opening
+- Deduct case price from user balance in a transaction
+- Add won item to user_items table
+- Record transaction in transactions table
 </Warning>
+
+<Note>
+The `game_rolls` table stores the actual server seed used for each roll, enabling users to verify fairness after the round completes.
+</Note>
 
 <Info>
 The nonce automatically increments with each case opening, ensuring each roll is unique even with the same seeds.
