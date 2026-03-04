@@ -1,0 +1,122 @@
+{
+  "projectType": "saas",
+  "projectName": "Cajas",
+  "projectDescription": "A provably fair case opening platform with virtual items, user authentication, and real-time rewards system",
+  "theme": "almond",
+  "primaryColor": "#ffc44f",
+  "lightColor": "#ffa900",
+  "darkColor": "#212431",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "features"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/case-opening",
+              "features/provably-fair",
+              "features/wallet-system",
+              "features/user-inventory"
+            ]
+          },
+          {
+            "group": "User Guide",
+            "pages": [
+              "user-guide/authentication",
+              "user-guide/opening-cases",
+              "user-guide/managing-inventory",
+              "user-guide/wallet-management"
+            ]
+          },
+          {
+            "group": "Admin Guide",
+            "pages": [
+              "admin/overview",
+              "admin/creating-cases",
+              "admin/managing-items",
+              "admin/monitoring"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Technical Reference",
+        "groups": [
+          {
+            "group": "Architecture",
+            "pages": [
+              "technical/overview",
+              "technical/database-schema",
+              "technical/authentication"
+            ]
+          },
+          {
+            "group": "Provably Fair System",
+            "pages": [
+              "technical/provably-fair/overview",
+              "technical/provably-fair/implementation",
+              "technical/provably-fair/verification"
+            ]
+          },
+          {
+            "group": "API Reference",
+            "pages": [
+              "api/overview",
+              "api/cases",
+              "api/provably-fair"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Deployment",
+        "groups": [
+          {
+            "group": "Setup",
+            "pages": [
+              "deployment/environment-setup",
+              "deployment/supabase-configuration",
+              "deployment/database-migrations"
+            ]
+          },
+          {
+            "group": "Production",
+            "pages": [
+              "deployment/vercel-deployment",
+              "deployment/security",
+              "deployment/monitoring"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Provably fair case opening system with cryptographic verification",
+    "Real-time animated case opening with sound effects",
+    "User authentication and profile management with Supabase",
+    "Virtual wallet system for deposits and balance management",
+    "Item inventory and rarity-based reward system",
+    "Admin panel for case and item management",
+    "Responsive design with Tailwind CSS and Framer Motion",
+    "Database-backed transaction history and audit logs"
+  ],
+  "publicApiSurface": [
+    "POST /api/cases/open - Open a case and get a random item",
+    "GET /api/provably-fair/seed - Get current user seeds for provably fair verification",
+    "POST /api/provably-fair/seed - Rotate server seed and update client seed",
+    "CaseOpener component - Main case opening interface",
+    "CaseBrowser component - Browse available cases",
+    "AuthModal component - User authentication modal",
+    "provably-fair utilities - generateServerSeed, calculateRollResult, getWinningItem"
+  ]
+}
