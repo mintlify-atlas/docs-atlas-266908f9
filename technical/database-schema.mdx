@@ -1,0 +1,435 @@
+---
+title: Database Schema
+description: Complete PostgreSQL database schema with tables, columns, relationships, and RLS policies
+---
+
+## Overview
+
+Cajas uses PostgreSQL (via Supabase) with Row Level Security (RLS) enabled on all tables. The schema supports user management, case opening, inventory tracking, and provably fair gaming verification.
+
+## Entity Relationship Diagram
+
+```
+┌─────────────────┐
+│   auth.users    │ (Supabase Auth)
+│─────────────────│
+│ id: uuid PK     │
+└─────────────────┘
+        │
+        │ 1:1
+        ↓
+┌─────────────────┐         ┌─────────────────┐
+│    profiles     │         │   admin_logs    │
+│─────────────────│         │─────────────────│
+│ id: uuid PK/FK  │←───────│ admin_id: uuid  │
+│ full_name       │         │ action: text    │
+│ avatar_url      │         │ details: jsonb  │
+│ dni             │         │ created_at      │
+│ phone           │         └─────────────────┘
+│ address         │
+│ role            │
+│ updated_at      │
+└─────────────────┘
+
+┌─────────────────┐         ┌─────────────────┐
+│     users       │         │   user_seeds    │
+│─────────────────│         │─────────────────│
+│ id: uuid PK/FK  │←───1:1─→│ user_id: uuid PK│
+│ username        │         │ server_seed     │
+│ avatar_url      │         │ client_seed     │
+│ balance         │         │ nonce: bigint   │
+│ created_at      │         │ created_at      │
+└─────────────────┘         │ updated_at      │
+        │                   └─────────────────┘
+        │
+        │ 1:N
+        ↓
+┌─────────────────┐         ┌─────────────────┐
+│  transactions   │         │   game_rolls    │
+│─────────────────│         │─────────────────│
+│ id: uuid PK     │         │ id: uuid PK     │
+│ user_id: uuid FK│         │ user_id: uuid FK│
+│ amount: numeric │         │ case_id: uuid FK│
+│ type: text      │         │ server_seed     │
+│ reference_id    │         │ client_seed     │
+│ created_at      │         │ nonce: bigint   │
+└─────────────────┘         │ roll_result     │
+                            │ item_won_id: FK │
+                            │ created_at      │
+                            └─────────────────┘
+                                    │
+                                    │
+    ┌───────────────────────────────┘
+    │
+    ↓
+┌─────────────────┐         ┌─────────────────┐
+│     cases       │         │   case_items    │
+│─────────────────│         │─────────────────│
+│ id: uuid PK     │←───1:N─→│ id: uuid PK     │
+│ name: text      │         │ case_id: uuid FK│
+│ slug: text      │         │ name: text      │
+│ description     │         │ value: numeric  │
+│ price: numeric  │         │ image_url: text │
+│ image_url       │         │ probability     │
+│ created_at      │         │ created_at      │
+└─────────────────┘         └─────────────────┘
+                                    │
+                                    │
+    ┌───────────────────────────────┘
+    │
+    ↓
+┌─────────────────┐         ┌─────────────────┐
+│     items       │         │   user_items    │
+│─────────────────│         │─────────────────│
+│ id: uuid PK     │←───1:N─→│ id: uuid PK     │
+│ name: text      │         │ user_id: uuid FK│
+│ image_url       │         │ item_id: uuid FK│
+│ rarity: text    │         │ status: text    │
+│ price: numeric  │         │ created_at      │
+│ created_at      │         └─────────────────┘
+└─────────────────┘
+```
+
+## Tables
+
+### profiles
+
+Extended user profile information. One-to-one with `auth.users`.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | uuid | PRIMARY KEY, REFERENCES auth.users | User ID from Supabase Auth |
+| `updated_at` | timestamptz | nullable | Last profile update |
+| `full_name` | text | nullable | User's full name |
+| `avatar_url` | text | nullable | Profile picture URL |
+| `dni` | text | nullable | National ID document |
+| `phone` | text | nullable | Phone number |
+| `address` | text | nullable | Physical address |
+| `role` | text | DEFAULT 'user', CHECK | User role: 'user' or 'admin' |
+
+**RLS Policies:**
+- Public read: Anyone can view profiles
+- Users can insert their own profile
+- Users can update their own profile
+
+### users
+
+Public user information for the gaming platform.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | uuid | PRIMARY KEY, REFERENCES auth.users | User ID |
+| `username` | text | UNIQUE, nullable | Display username |
+| `avatar_url` | text | nullable | Avatar image URL |
+| `balance` | numeric | DEFAULT 0 | Virtual currency balance |
+| `client_seed` | text | nullable | Deprecated: moved to user_seeds |
+| `nonce` | integer | DEFAULT 0 | Deprecated: moved to user_seeds |
+| `created_at` | timestamptz | DEFAULT now() | Account creation timestamp |
+
+**RLS Policies:**
+- Public profiles are viewable by everyone
+- Users can insert their own profile (via trigger)
+- Users can update their own profile
+
+**Database Trigger:**
+```sql
+CREATE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.users (id, username, avatar_url)
+  VALUES (
+    new.id,
+    new.raw_user_meta_data ->> 'full_name',
+    new.raw_user_meta_data ->> 'avatar_url'
+  );
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+```
+
+### cases
+
+Available cases that users can open.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | uuid | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique case ID |
+| `name` | text | NOT NULL | Case display name |
+| `slug` | text | UNIQUE, NOT NULL | URL-friendly identifier |
+| `description` | text | nullable | Case description |
+| `price` | numeric | NOT NULL, CHECK (price >= 0) | Cost to open case |
+| `image_url` | text | NOT NULL | Case image URL |
+| `created_at` | timestamptz | DEFAULT now() | Creation timestamp |
+
+**RLS Policies:**
+- Public read: All users can view cases
+- Admins insert: Only admins can create cases
+- Admins update: Only admins can modify cases
+- Admins delete: Only admins can delete cases
+
+### case_items
+
+Items that can be won from each case.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | uuid | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique item ID |
+| `case_id` | uuid | REFERENCES cases ON DELETE CASCADE | Parent case |
+| `name` | text | NOT NULL | Item name |
+| `value` | numeric | NOT NULL, CHECK (value >= 0) | Item monetary value |
+| `image_url` | text | NOT NULL | Item image URL |
+| `probability` | numeric | NOT NULL, CHECK (probability greater than 0 AND less than or equal to 100) | Drop chance percentage |
+| `created_at` | timestamptz | DEFAULT now() | Creation timestamp |
+
+**RLS Policies:**
+- Public read: All users can view items
+- Admins insert/update/delete: Only admins can modify
+
+**Usage Example:**
+```typescript
+const { data: caseItems } = await supabase
+  .from('case_items')
+  .select('*')
+  .eq('case_id', caseId)
+  .order('probability', { ascending: false })
+```
+
+### items
+
+Master list of all unique items in the system.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | uuid | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique item ID |
+| `name` | text | NOT NULL | Item name |
+| `image_url` | text | nullable | Item image URL |
+| `rarity` | text | NOT NULL | Rarity tier: common, rare, epic, legendary |
+| `price` | numeric | NOT NULL | Item base value |
+| `created_at` | timestamptz | DEFAULT now() | Creation timestamp |
+
+**RLS Policies:**
+- Public read: All users can view items
+
+### user_items
+
+User inventory - items won from opening cases.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | uuid | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique record ID |
+| `user_id` | uuid | REFERENCES users NOT NULL | Item owner |
+| `item_id` | uuid | REFERENCES items NOT NULL | Item reference |
+| `status` | text | DEFAULT 'in_inventory' | Status: in_inventory, sold, withdrawn |
+| `created_at` | timestamptz | DEFAULT now() | When item was won |
+
+**RLS Policies:**
+- Users can view only their own items
+
+**Usage Example:**
+```typescript
+const { data: inventory } = await supabase
+  .from('user_items')
+  .select(`
+    *,
+    items:item_id (
+      name,
+      image_url,
+      rarity,
+      price
+    )
+  `)
+  .eq('user_id', userId)
+  .eq('status', 'in_inventory')
+```
+
+### transactions
+
+Financial transaction history.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | uuid | PRIMARY KEY, DEFAULT gen_random_uuid() | Transaction ID |
+| `user_id` | uuid | REFERENCES users NOT NULL | User performing transaction |
+| `amount` | numeric | NOT NULL | Transaction amount |
+| `type` | text | NOT NULL | Type: deposit, withdraw, case_open, item_sell |
+| `reference_id` | uuid | nullable | Link to case or item |
+| `created_at` | timestamptz | DEFAULT now() | Transaction timestamp |
+
+**RLS Policies:**
+- Users can view only their own transactions
+
+### user_seeds
+
+Provably fair seed pairs for each user.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `user_id` | uuid | PRIMARY KEY, REFERENCES auth.users | User ID |
+| `server_seed` | text | NOT NULL | Server-generated secret seed |
+| `client_seed` | text | NOT NULL | User-provided or client-generated seed |
+| `nonce` | bigint | NOT NULL, DEFAULT 0 | Incrementing counter for each game |
+| `created_at` | timestamptz | DEFAULT now() | Initial seed creation |
+| `updated_at` | timestamptz | DEFAULT now() | Last seed update |
+
+**RLS Policies:**
+- Users can view their own seeds
+- Users can update their own seeds
+- Users can insert their own seeds
+
+**Usage Example:**
+```typescript
+const { data: seeds } = await supabase
+  .from('user_seeds')
+  .select('*')
+  .eq('user_id', user.id)
+  .single()
+```
+
+### game_rolls
+
+Audit log of all game rolls for provably fair verification.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | uuid | PRIMARY KEY, DEFAULT gen_random_uuid() | Roll ID |
+| `user_id` | uuid | REFERENCES auth.users NOT NULL | Player |
+| `case_id` | uuid | REFERENCES cases NOT NULL | Case opened |
+| `server_seed` | text | NOT NULL | Server seed used for this roll |
+| `client_seed` | text | NOT NULL | Client seed used for this roll |
+| `nonce` | bigint | NOT NULL | Nonce value for this roll |
+| `roll_result` | bigint | NOT NULL | Raw random number generated |
+| `item_won_id` | uuid | REFERENCES items NOT NULL | Item won |
+| `created_at` | timestamptz | DEFAULT now() | Roll timestamp |
+
+**RLS Policies:**
+- Users can view their own rolls
+
+**Usage Example:**
+```typescript
+// Record a game roll
+await supabase.from('game_rolls').insert({
+  user_id: user.id,
+  case_id: caseId,
+  server_seed: seeds.server_seed,
+  client_seed: seeds.client_seed,
+  nonce: nonce,
+  roll_result: Math.floor(rollValue * 1000000),
+  item_won_id: winnerItem.id
+})
+```
+
+### admin_logs
+
+Audit trail of admin actions.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | uuid | PRIMARY KEY, DEFAULT gen_random_uuid() | Log ID |
+| `admin_id` | uuid | REFERENCES auth.users, nullable | Admin user |
+| `action` | text | NOT NULL | Action performed |
+| `details` | jsonb | nullable | Additional action details |
+| `created_at` | timestamptz | DEFAULT now() | Action timestamp |
+
+**RLS Policies:**
+- Admins can view logs
+- Admins can insert logs
+
+## Database Usage Examples
+
+### Fetching Cases with Items
+
+```typescript
+import { createClient } from '@/lib/supabase/server'
+
+const supabase = await createClient()
+
+const { data: cases, error } = await supabase
+  .from('cases')
+  .select(`
+    *,
+    case_items (
+      id,
+      name,
+      value,
+      image_url,
+      probability
+    )
+  `)
+  .order('created_at', { ascending: false })
+```
+
+### Creating a Case (Admin Only)
+
+```typescript
+const { data: newCase, error } = await supabase
+  .from('cases')
+  .insert({
+    name: 'Premium Case',
+    slug: 'premium-case',
+    description: 'High-value items',
+    price: 100,
+    image_url: 'https://example.com/case.png'
+  })
+  .select()
+  .single()
+
+if (newCase) {
+  // Add items to the case
+  await supabase
+    .from('case_items')
+    .insert([
+      {
+        case_id: newCase.id,
+        name: 'Rare Item',
+        value: 500,
+        image_url: 'https://example.com/item.png',
+        probability: 5
+      }
+    ])
+}
+```
+
+### Checking User Balance
+
+```typescript
+const { data: user } = await supabase
+  .from('users')
+  .select('balance')
+  .eq('id', userId)
+  .single()
+
+if (user && user.balance >= casePrice) {
+  // User can afford to open case
+}
+```
+
+## Type Safety
+
+All database types are auto-generated in `types/supabase.ts`:
+
+```typescript
+import { Database } from '@/types/supabase'
+
+type Case = Database['public']['Tables']['cases']['Row']
+type CaseInsert = Database['public']['Tables']['cases']['Insert']
+type CaseUpdate = Database['public']['Tables']['cases']['Update']
+```
+
+## Migrations
+
+Database schema is managed through migration files in `supabase/migrations/`:
+
+- `20240101000000_init.sql` - Initial schema with users, cases, items, transactions
+- `0000_create_cases_system.sql` - Cases and admin system
+- `20251205120000_fix_case_items_schema.sql` - Case items schema update
+- `20251209000000_create_provably_fair.sql` - Provably fair system tables
+
+## Related Documentation
+
+- [System Architecture](/technical/overview) - Overall system design
+- [Authentication](/technical/authentication) - Auth and RLS details
+- [Provably Fair Implementation](/technical/provably-fair/implementation) - How seeds and rolls work

@@ -1,0 +1,206 @@
+---
+title: 'Open Case'
+description: 'Open a case and receive a provably fair random item'
+api: 'POST /api/cases/open'
+---
+
+## Endpoint
+
+```
+POST /api/cases/open
+```
+
+Opens a case and returns a randomly selected item using the provably fair algorithm. The result is deterministic based on the server seed, client seed, and nonce.
+
+## Authentication
+
+<Info>
+This endpoint requires authentication. Include a valid Supabase session token.
+</Info>
+
+## Request Body
+
+<ParamField body="caseId" type="string" required>
+  The unique identifier of the case to open. Must exist in the database.
+</ParamField>
+
+<ParamField body="clientSeed" type="string" optional>
+  Optional custom client seed for this opening. If provided and different from the stored seed, it will be updated before the roll calculation.
+</ParamField>
+
+### Example Request
+
+```json
+{
+  "caseId": "550e8400-e29b-41d4-a716-446655440000",
+  "clientSeed": "my-custom-seed-123"
+}
+```
+
+## Response
+
+### Success Response (200 OK)
+
+<ResponseField name="winner" type="object">
+  The item won from the case opening
+  
+  <ResponseField name="winner.id" type="string">
+    Unique identifier of the item
+  </ResponseField>
+  
+  <ResponseField name="winner.name" type="string">
+    Name of the item
+  </ResponseField>
+  
+  <ResponseField name="winner.value" type="number">
+    Monetary value of the item
+  </ResponseField>
+  
+  <ResponseField name="winner.probability" type="number">
+    Drop probability percentage (0-100)
+  </ResponseField>
+  
+  <ResponseField name="winner.rarity" type="string">
+    Rarity tier: `legendary`, `epic`, `rare`, or `common`
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="fairness" type="object">
+  Provably fair verification data
+  
+  <ResponseField name="fairness.server_seed_hash" type="string">
+    SHA-256 hash of the server seed used for this roll
+  </ResponseField>
+  
+  <ResponseField name="fairness.client_seed" type="string">
+    The client seed used for this roll
+  </ResponseField>
+  
+  <ResponseField name="fairness.nonce" type="number">
+    The nonce value used for this roll (increments with each opening)
+  </ResponseField>
+  
+  <ResponseField name="fairness.roll_value" type="number">
+    The calculated roll value (0-1) used to determine the winner
+  </ResponseField>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "winner": {
+    "id": "item-123",
+    "name": "Dragon Lore AWP",
+    "value": 2500.00,
+    "probability": 0.5,
+    "rarity": "legendary",
+    "image_url": "https://..."
+  },
+  "fairness": {
+    "server_seed_hash": "a3d5f8b2c1e4d7a9b6c3e1f4d7a9b6c3e1f4d7a9b6c3e1f4d7a9b6c3e1f4d7a9",
+    "client_seed": "my-custom-seed-123",
+    "nonce": 42,
+    "roll_value": 0.00234
+  }
+}
+```
+
+## Error Responses
+
+<ResponseField name="401" type="Unauthorized">
+  User is not authenticated
+  
+  ```json
+  {
+    "error": "Unauthorized"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="404" type="Not Found">
+  Case with the specified ID does not exist
+  
+  ```json
+  {
+    "error": "Case not found"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="400" type="Bad Request">
+  Case exists but has no items
+  
+  ```json
+  {
+    "error": "Case is empty"
+  }
+  ```
+</ResponseField>
+
+## Implementation Details
+
+### Roll Calculation
+
+The endpoint performs the following steps:
+
+1. **Validate User**: Checks authentication via Supabase
+2. **Fetch Case Data**: Retrieves case and its items from the database
+3. **Get/Create Seeds**: Fetches user's current seeds or creates initial ones
+4. **Update Client Seed**: If provided, updates the client seed
+5. **Calculate Roll**: Uses `calculateRollResult(server_seed, client_seed, nonce + 1)`
+6. **Determine Winner**: Selects item based on roll value and probability distribution
+7. **Update Nonce**: Increments nonce in database
+8. **Record Roll**: Stores audit trail in `game_rolls` table
+9. **Return Result**: Returns winner and fairness data
+
+### Rarity Mapping
+
+Rarity tiers are determined by probability:
+
+- **Legendary**: probability < 1%
+- **Epic**: probability < 5%
+- **Rare**: probability < 20%
+- **Common**: probability >= 20%
+
+### Code Reference
+
+Implementation: `source/app/api/cases/open/route.ts:5`
+
+## cURL Example
+
+```bash
+curl -X POST https://your-domain.com/api/cases/open \
+  -H "Authorization: Bearer YOUR_SUPABASE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "caseId": "550e8400-e29b-41d4-a716-446655440000",
+    "clientSeed": "my-custom-seed-123"
+  }'
+```
+
+## Verification
+
+After receiving the response, you can verify the fairness:
+
+1. Store the `server_seed_hash`, `client_seed`, and `nonce`
+2. Later, reveal the `server_seed` via the provably fair interface
+3. Verify that `SHA256(server_seed)` matches `server_seed_hash`
+4. Recalculate the roll using the revealed seeds and nonce
+5. Confirm the roll value produces the same winning item
+
+<Tip>
+See the [Provably Fair Verification](/technical/provably-fair/verification) guide for detailed verification steps.
+</Tip>
+
+## Notes
+
+<Warning>
+- The endpoint does not yet implement balance deduction or inventory management (see TODO comment in code)
+- Ensure users have sufficient balance before opening cases
+- The `game_rolls` table stores the actual server seed for later verification
+</Warning>
+
+<Info>
+The nonce automatically increments with each case opening, ensuring each roll is unique even with the same seeds.
+</Info>

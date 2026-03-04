@@ -1,0 +1,277 @@
+---
+title: 'Provably Fair Seeds'
+description: 'Manage user seeds for provably fair gaming'
+---
+
+## Overview
+
+The provably fair seed endpoints allow users to retrieve and rotate their cryptographic seeds used in the provably fair system. These seeds ensure that game outcomes are deterministic and verifiable.
+
+<Tip>
+For more information on how the provably fair system works, see the [Provably Fair System](/features/provably-fair) guide.
+</Tip>
+
+---
+
+## Get Current Seeds
+
+```
+GET /api/provably-fair/seed
+```
+
+Retrieves the current seed information for the authenticated user. Only returns public information (server seed hash, not the actual server seed).
+
+### Authentication
+
+<Info>
+This endpoint requires authentication. Include a valid Supabase session token.
+</Info>
+
+### Response
+
+<ResponseField name="server_seed_hash" type="string">
+  SHA-256 hash of the current server seed. This allows verification without revealing the seed.
+</ResponseField>
+
+<ResponseField name="client_seed" type="string">
+  The current client seed. This is visible to the user and can be customized.
+</ResponseField>
+
+<ResponseField name="nonce" type="number">
+  Current nonce value. Increments with each game round to ensure unique outcomes.
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "server_seed_hash": "a3d5f8b2c1e4d7a9b6c3e1f4d7a9b6c3e1f4d7a9b6c3e1f4d7a9b6c3e1f4d7a9",
+  "client_seed": "client-seed-abc123",
+  "nonce": 15
+}
+```
+
+### Error Responses
+
+<ResponseField name="401" type="Unauthorized">
+  User is not authenticated
+  
+  ```json
+  {
+    "error": "Unauthorized"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Database error occurred while creating or fetching seeds
+  
+  ```json
+  {
+    "error": "Error message"
+  }
+  ```
+</ResponseField>
+
+### Implementation Details
+
+If the user doesn't have existing seeds, the endpoint automatically creates initial seeds:
+- Generates a random server seed
+- Generates a random client seed
+- Sets nonce to 0
+
+Code reference: `source/app/api/provably-fair/seed/route.ts:5`
+
+### cURL Example
+
+```bash
+curl -X GET https://your-domain.com/api/provably-fair/seed \
+  -H "Authorization: Bearer YOUR_SUPABASE_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+---
+
+## Rotate Seeds
+
+```
+POST /api/provably-fair/seed
+```
+
+Rotates the server and client seeds for the authenticated user. This creates a new seed pair and resets the nonce to 0.
+
+<Warning>
+Rotating seeds should be done carefully. After rotation, previous game results can be verified using the old seeds, but new games will use the new seed pair.
+</Warning>
+
+### Authentication
+
+<Info>
+This endpoint requires authentication. Include a valid Supabase session token.
+</Info>
+
+### Request Body
+
+<ParamField body="client_seed" type="string" optional>
+  Optional custom client seed. If not provided, a random client seed will be generated.
+</ParamField>
+
+### Example Request
+
+```json
+{
+  "client_seed": "my-custom-client-seed-xyz"
+}
+```
+
+Or omit the body to auto-generate:
+
+```json
+{}
+```
+
+### Response
+
+<ResponseField name="server_seed_hash" type="string">
+  SHA-256 hash of the new server seed
+</ResponseField>
+
+<ResponseField name="client_seed" type="string">
+  The new client seed (custom or auto-generated)
+</ResponseField>
+
+<ResponseField name="nonce" type="number">
+  Reset to 0 after seed rotation
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "server_seed_hash": "b7e4c9d3f1a8e6b2d5c7f3a9e6b2d5c7f3a9e6b2d5c7f3a9e6b2d5c7f3a9e6b2",
+  "client_seed": "my-custom-client-seed-xyz",
+  "nonce": 0
+}
+```
+
+### Error Responses
+
+<ResponseField name="401" type="Unauthorized">
+  User is not authenticated
+  
+  ```json
+  {
+    "error": "Unauthorized"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Database error occurred during seed rotation
+  
+  ```json
+  {
+    "error": "Error message"
+  }
+  ```
+</ResponseField>
+
+### Implementation Details
+
+When seeds are rotated:
+
+1. **New Server Seed**: A cryptographically secure random server seed is generated
+2. **New Client Seed**: Either uses the provided client seed or generates a new random one
+3. **Nonce Reset**: Nonce is reset to 0
+4. **Timestamp Update**: Records the rotation time in `updated_at`
+
+<Info>
+The old server seed should be revealed to the user after rotation, allowing them to verify all previous game results. This is a critical part of the provably fair system.
+</Info>
+
+Code reference: `source/app/api/provably-fair/seed/route.ts:48`
+
+### cURL Example
+
+```bash
+curl -X POST https://your-domain.com/api/provably-fair/seed \
+  -H "Authorization: Bearer YOUR_SUPABASE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "client_seed": "my-custom-client-seed-xyz"
+  }'
+```
+
+## Best Practices
+
+### When to Rotate Seeds
+
+<CardGroup cols={2}>
+  <Card title="Regular Rotation" icon="rotate">
+    Rotate seeds periodically (e.g., every 100 games) to maintain trust
+  </Card>
+  <Card title="User Request" icon="user">
+    Allow users to rotate seeds at any time for full transparency
+  </Card>
+  <Card title="After Verification" icon="check">
+    Rotate after revealing the old server seed for verification
+  </Card>
+  <Card title="Suspicious Activity" icon="shield">
+    Rotate if there's any concern about seed compromise
+  </Card>
+</CardGroup>
+
+### Seed Management Tips
+
+<Steps>
+  <Step title="Store Seed Hashes">
+    Always show users the server seed hash before any games are played
+  </Step>
+  <Step title="Allow Custom Client Seeds">
+    Let users set their own client seed for maximum transparency
+  </Step>
+  <Step title="Reveal Old Seeds">
+    After rotation, reveal the old server seed so users can verify past results
+  </Step>
+  <Step title="Record Everything">
+    Keep an audit trail of all seeds and rotations in the database
+  </Step>
+</Steps>
+
+## Verification Workflow
+
+1. **Before Playing**: User retrieves `server_seed_hash` via GET endpoint
+2. **During Play**: Each game uses the current seeds + incrementing nonce
+3. **Seed Rotation**: User calls POST endpoint to rotate seeds
+4. **Reveal Old Seed**: System reveals the previous `server_seed`
+5. **Verification**: User confirms `SHA256(server_seed)` matches stored hash
+6. **Recalculation**: User recalculates all roll results using revealed seed
+
+<Tip>
+Implement a verification UI that allows users to input the revealed server seed and see that their game results were fair. See the [Verification Guide](/technical/provably-fair/verification) for implementation details.
+</Tip>
+
+## Security Considerations
+
+<Warning>
+- **Never expose the current server seed** - Only return the hash via GET endpoint
+- **Rotate seeds securely** - Use cryptographically secure random generators
+- **Audit trail** - Always log seed changes with timestamps
+- **Server seed revelation** - Only reveal server seeds after they're no longer in use
+</Warning>
+
+## Database Schema
+
+The `user_seeds` table structure:
+
+```sql
+user_seeds {
+  id: uuid
+  user_id: uuid (references auth.users)
+  server_seed: text
+  client_seed: text
+  nonce: integer
+  created_at: timestamp
+  updated_at: timestamp
+}
+```

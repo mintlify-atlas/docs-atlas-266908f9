@@ -1,0 +1,193 @@
+---
+title: 'Environment Setup'
+description: 'Configure environment variables and .env files for the Cajas application'
+---
+
+## Overview
+
+Cajas requires specific environment variables to connect to your Supabase backend. This guide walks you through setting up your `.env.local` file with the necessary configuration.
+
+## Required Environment Variables
+
+The application needs two essential Supabase environment variables:
+
+| Variable | Description | Where to Find |
+|----------|-------------|---------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL | Project Settings > API |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public anon/client key | Project Settings > API |
+
+<Warning>
+Both variables are prefixed with `NEXT_PUBLIC_` because they need to be accessible in the browser for client-side Supabase connections.
+</Warning>
+
+## Setup Instructions
+
+<Steps>
+  <Step title="Create Environment File">
+    Create a `.env.local` file in the root of your project:
+
+    ```bash
+    touch .env.local
+    ```
+
+    <Note>
+    The `.env.local` file is automatically ignored by git (see `.gitignore`). Never commit sensitive credentials to version control.
+    </Note>
+  </Step>
+
+  <Step title="Add Supabase Credentials">
+    Open `.env.local` and add your Supabase project credentials:
+
+    ```bash .env.local
+    NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+    ```
+
+    Replace the placeholder values with your actual Supabase project details.
+  </Step>
+
+  <Step title="Verify Configuration">
+    The environment variables are used in two key files:
+
+    **Client-side usage** (`lib/supabase/client.ts:5-6`):
+    ```typescript
+    export function createClient() {
+        return createBrowserClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+    }
+    ```
+
+    **Server-side usage** (`lib/supabase/server.ts:8-9`):
+    ```typescript
+    return createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+            cookies: {
+                // Cookie handling configuration
+            }
+        }
+    )
+    ```
+  </Step>
+
+  <Step title="Restart Development Server">
+    After adding environment variables, restart your development server:
+
+    ```bash
+    npm run dev
+    ```
+
+    The server will now load the new environment variables.
+  </Step>
+</Steps>
+
+## Environment Files Guide
+
+Cajas follows Next.js environment variable conventions:
+
+- `.env.local` - Local development (gitignored)
+- `.env.production` - Production environment
+- `.env.example` - Template for required variables (committed to git)
+
+<Tip>
+Create a `.env.example` file with placeholder values to help other developers set up their environment:
+
+```bash .env.example
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+</Tip>
+
+## Troubleshooting
+
+### "Invalid API key" Error
+
+<AccordionGroup>
+  <Accordion title="Check your anon key">
+    Ensure you're using the **anon** (public) key, not the service role key. The service role key should never be exposed to the client.
+
+    Find it in: Supabase Dashboard > Project Settings > API > `anon` `public`
+  </Accordion>
+
+  <Accordion title="Verify URL format">
+    The URL should follow this format:
+    ```
+    https://[project-ref].supabase.co
+    ```
+
+    Do not include trailing slashes or additional paths.
+  </Accordion>
+
+  <Accordion title="Restart required">
+    Environment variables are loaded at build time. You must restart your development server after changing `.env.local`:
+
+    ```bash
+    # Stop the server (Ctrl+C)
+    npm run dev
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Environment Variables Not Loading
+
+<AccordionGroup>
+  <Accordion title="Check file location">
+    Ensure `.env.local` is in the project root directory, at the same level as `package.json`.
+  </Accordion>
+
+  <Accordion title="Verify syntax">
+    Environment variables should not have quotes or spaces:
+
+    ```bash
+    # ✅ Correct
+    NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co
+
+    # ❌ Incorrect
+    NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co"
+    ```
+  </Accordion>
+
+  <Accordion title="Clear Next.js cache">
+    Sometimes Next.js caches environment variables. Clear the cache and restart:
+
+    ```bash
+    rm -rf .next
+    npm run dev
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Security Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Never Commit Secrets" icon="lock">
+    Always add `.env.local` to `.gitignore`. The project is already configured to ignore `.env*` files.
+  </Card>
+
+  <Card title="Use Anon Key Only" icon="key">
+    Only use the public `anon` key in `NEXT_PUBLIC_` variables. The service role key should only be used server-side.
+  </Card>
+
+  <Card title="Rotate Keys Regularly" icon="rotate">
+    Rotate your API keys periodically and immediately if they're ever exposed.
+  </Card>
+
+  <Card title="Environment-Specific Values" icon="layer-group">
+    Use different Supabase projects for development, staging, and production environments.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Supabase Configuration" icon="database" href="/deployment/supabase-configuration">
+    Set up your Supabase project and enable required services
+  </Card>
+
+  <Card title="Database Migrations" icon="code-branch" href="/deployment/database-migrations">
+    Run database migrations to set up your schema
+  </Card>
+</CardGroup>

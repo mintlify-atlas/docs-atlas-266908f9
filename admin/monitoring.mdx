@@ -1,0 +1,575 @@
+---
+title: Monitoring and Audit Logs
+description: View transactions, audit logs, and monitor admin activity in the Cajas platform
+---
+
+## Overview
+
+The Cajas platform includes comprehensive logging and monitoring capabilities to track admin actions, maintain audit trails, and ensure platform integrity.
+
+## Admin Logs System
+
+### Database Schema
+
+All admin actions are recorded in the `admin_logs` table:
+
+```typescript
+interface AdminLog {
+  id: string
+  admin_id: string | null   // References auth.users(id)
+  action: string             // Action type identifier
+  details: Json | null       // Additional context/metadata
+  created_at: string         // ISO timestamp
+}
+```
+
+Reference: `/home/daytona/workspace/source/types/supabase.ts:102-124`
+
+### Table Definition
+
+```sql
+CREATE TABLE IF NOT EXISTS admin_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  admin_id uuid REFERENCES auth.users(id),
+  action text NOT NULL,
+  details jsonb,
+  created_at timestamptz DEFAULT now()
+);
+```
+
+Reference: `/home/daytona/workspace/source/supabase/migrations/0000_create_cases_system.sql:25-32`
+
+## Logged Actions
+
+### Case Creation
+
+When an admin creates a case, a log entry is created:
+
+```typescript
+await supabase.from('admin_logs').insert({
+  admin_id: user.id,
+  action: 'CREATE_CASE',
+  details: { 
+    case_id: newCase.id, 
+    name: newCase.name 
+  },
+})
+```
+
+Reference: `/home/daytona/workspace/source/app/actions/create-case.ts:128-132`
+
+**Log Details**:
+- **admin_id**: UUID of the admin who created the case
+- **action**: `'CREATE_CASE'`
+- **details**: Object containing:
+  - `case_id`: UUID of the newly created case
+  - `name`: Name of the case
+- **created_at**: Automatic timestamp
+
+### Action Types
+
+Current logged actions:
+
+| Action | Description | Details Schema |
+|--------|-------------|----------------|
+| `CREATE_CASE` | New case created | `{ case_id: string, name: string }` |
+
+Future actions could include:
+- `UPDATE_CASE`: Case properties modified
+- `DELETE_CASE`: Case removed
+- `UPDATE_ITEM`: Item properties changed
+- `GRANT_ADMIN`: Admin role granted
+- `REVOKE_ADMIN`: Admin role revoked
+
+## Row Level Security
+
+### Access Policies
+
+Only admins can access audit logs:
+
+```sql
+-- Read access
+CREATE POLICY "Admins view logs" ON admin_logs FOR SELECT USING (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+);
+
+-- Write access
+CREATE POLICY "Admins insert logs" ON admin_logs FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+);
+```
+
+Reference: `/home/daytona/workspace/source/supabase/migrations/0000_create_cases_system.sql:64-70`
+
+### Security Benefits
+
+1. **Prevents unauthorized access**: Regular users cannot view admin logs
+2. **Audit integrity**: Only admins can create log entries
+3. **Accountability**: Logs cannot be modified or deleted (no UPDATE/DELETE policies)
+
+## Querying Audit Logs
+
+### Get All Logs
+
+```typescript
+const { data: logs, error } = await supabase
+  .from('admin_logs')
+  .select('*')
+  .order('created_at', { ascending: false })
+```
+
+### Get Logs by Admin
+
+```typescript
+const { data: logs, error } = await supabase
+  .from('admin_logs')
+  .select('*')
+  .eq('admin_id', adminUserId)
+  .order('created_at', { ascending: false })
+```
+
+### Get Logs by Action Type
+
+```typescript
+const { data: logs, error } = await supabase
+  .from('admin_logs')
+  .select('*')
+  .eq('action', 'CREATE_CASE')
+  .order('created_at', { ascending: false })
+```
+
+### Get Logs with Admin Details
+
+```typescript
+const { data: logs, error } = await supabase
+  .from('admin_logs')
+  .select(`
+    *,
+    admin:admin_id (
+      id,
+      email,
+      profiles (
+        full_name,
+        avatar_url
+      )
+    )
+  `)
+  .order('created_at', { ascending: false })
+```
+
+### Filter by Date Range
+
+```typescript
+const startDate = new Date('2024-01-01')
+const endDate = new Date('2024-12-31')
+
+const { data: logs, error } = await supabase
+  .from('admin_logs')
+  .select('*')
+  .gte('created_at', startDate.toISOString())
+  .lte('created_at', endDate.toISOString())
+  .order('created_at', { ascending: false })
+```
+
+## Creating Log Entries
+
+### Manual Logging
+
+When implementing new admin features, add logging:
+
+```typescript
+// After successful admin action
+await supabase.from('admin_logs').insert({
+  admin_id: user.id,
+  action: 'YOUR_ACTION_TYPE',
+  details: {
+    // Relevant context
+    resource_id: resourceId,
+    changes: changedFields,
+    // etc.
+  },
+})
+```
+
+### Best Practices for Logging
+
+1. **Log after success**: Only log after the action completes successfully
+2. **Include context**: Add relevant IDs and metadata to `details`
+3. **Use consistent naming**: Follow the `VERB_NOUN` pattern (e.g., `CREATE_CASE`, `UPDATE_ITEM`)
+4. **Keep details minimal**: Only include necessary information
+5. **Don't log sensitive data**: Avoid passwords, API keys, etc.
+
+### Example: Logging a Case Update
+
+```typescript
+async function updateCase(caseId: string, updates: Partial<Case>) {
+  const supabase = await createClient()
+  
+  // Verify admin
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+  
+  if (profile?.role !== 'admin') {
+    return { error: 'Unauthorized' }
+  }
+  
+  // Update case
+  const { data: updatedCase, error } = await supabase
+    .from('cases')
+    .update(updates)
+    .eq('id', caseId)
+    .select()
+    .single()
+  
+  if (error) return { error: error.message }
+  
+  // Log the action
+  await supabase.from('admin_logs').insert({
+    admin_id: user.id,
+    action: 'UPDATE_CASE',
+    details: {
+      case_id: caseId,
+      name: updatedCase.name,
+      fields_updated: Object.keys(updates),
+    },
+  })
+  
+  return { success: true, data: updatedCase }
+}
+```
+
+## Monitoring Dashboard (Future Feature)
+
+A dedicated admin dashboard could display:
+
+### Recent Activity Feed
+
+```typescript
+interface ActivityFeedItem {
+  id: string
+  admin_name: string
+  admin_avatar: string
+  action: string
+  action_label: string  // "Created case", "Updated item", etc.
+  resource_name: string // Name of affected resource
+  timestamp: string
+}
+
+// Example display:
+// "John Doe created case 'Dragon Lore Case' - 2 minutes ago"
+// "Jane Smith updated item 'AK-47 Redline' - 1 hour ago"
+```
+
+### Statistics Panel
+
+```typescript
+interface AdminStats {
+  total_actions_today: number
+  total_actions_week: number
+  cases_created_today: number
+  most_active_admin: {
+    name: string
+    action_count: number
+  }
+}
+```
+
+### Action Breakdown Chart
+
+```typescript
+interface ActionBreakdown {
+  action_type: string
+  count: number
+  percentage: number
+}
+
+// Example query
+const { data } = await supabase
+  .from('admin_logs')
+  .select('action')
+  .gte('created_at', startOfWeek.toISOString())
+
+// Group by action type
+const breakdown = data.reduce((acc, log) => {
+  acc[log.action] = (acc[log.action] || 0) + 1
+  return acc
+}, {})
+```
+
+## Transaction Monitoring
+
+While not currently implemented in the provided code, the database schema from the migrations includes a `transactions` table that could be used for monitoring:
+
+```typescript
+interface Transaction {
+  id: string
+  user_id: string
+  amount: number
+  type: 'deposit' | 'withdraw' | 'case_open' | 'item_sell'
+  reference_id: string | null
+  created_at: string
+}
+```
+
+Reference: `/home/daytona/workspace/source/supabase/migrations/20240101000000_init.sql:94-108`
+
+### Potential Monitoring Queries
+
+#### Total Revenue Today
+
+```typescript
+const { data } = await supabase
+  .from('transactions')
+  .select('amount')
+  .eq('type', 'case_open')
+  .gte('created_at', startOfDay.toISOString())
+
+const totalRevenue = data.reduce((sum, t) => sum + t.amount, 0)
+```
+
+#### Most Popular Cases
+
+```typescript
+const { data } = await supabase
+  .from('transactions')
+  .select('reference_id')
+  .eq('type', 'case_open')
+  .gte('created_at', startOfWeek.toISOString())
+
+// Count by reference_id (case_id)
+const popularity = data.reduce((acc, t) => {
+  acc[t.reference_id] = (acc[t.reference_id] || 0) + 1
+  return acc
+}, {})
+```
+
+#### User Activity
+
+```typescript
+const { data } = await supabase
+  .from('transactions')
+  .select('user_id, amount, type')
+  .eq('user_id', userId)
+  .order('created_at', { ascending: false })
+  .limit(50)
+```
+
+## Provably Fair Game Logs
+
+The platform includes a `provably_fair_games` table for transparency:
+
+```typescript
+interface ProvablyFairGame {
+  id: string
+  user_id: string
+  case_id: string
+  server_seed: string
+  client_seed: string
+  nonce: number
+  roll_result: number
+  item_won_id: string
+  created_at: string
+}
+```
+
+Reference: `/home/daytona/workspace/source/supabase/migrations/20240101000000_init.sql:110-127`
+
+### Benefits for Monitoring
+
+1. **Verify fairness**: Admins can audit game results
+2. **Detect anomalies**: Unusual patterns may indicate issues
+3. **User support**: Look up specific game results for disputes
+
+### Example Queries
+
+#### Get Game by ID
+
+```typescript
+const { data: game } = await supabase
+  .from('provably_fair_games')
+  .select('*')
+  .eq('id', gameId)
+  .single()
+```
+
+#### Verify Game Result
+
+```typescript
+import { verifyRoll } from '@/lib/provably-fair'
+
+const { data: game } = await supabase
+  .from('provably_fair_games')
+  .select('*')
+  .eq('id', gameId)
+  .single()
+
+const isValid = verifyRoll(
+  game.server_seed,
+  game.client_seed,
+  game.nonce,
+  game.roll_result
+)
+
+console.log('Game is valid:', isValid)
+```
+
+## Best Practices
+
+### Logging Strategy
+
+1. **Log all admin actions**: Every create, update, delete operation
+2. **Include actor information**: Always log `admin_id`
+3. **Add sufficient context**: Resource IDs, names, changed fields
+4. **Timestamp everything**: Use automatic `created_at` timestamps
+5. **Make logs immutable**: No UPDATE or DELETE policies on logs
+
+### Privacy Considerations
+
+1. **Don't log sensitive data**:
+   - Passwords or password hashes
+   - API keys or tokens
+   - Personal user data (unless necessary)
+   - Financial details beyond amounts
+
+2. **Anonymize when possible**:
+   - Use IDs instead of names where appropriate
+   - Aggregate data for statistics
+
+3. **Limit log retention**:
+   - Consider archiving old logs (90+ days)
+   - Implement automated cleanup policies
+
+### Monitoring Access
+
+1. **Restrict to admins**: Use RLS policies
+2. **Audit log access**: Log who views audit logs
+3. **Regular reviews**: Schedule periodic log reviews
+4. **Alert on suspicious activity**: Set up notifications for unusual patterns
+
+## Example: Building an Audit Log Viewer
+
+```typescript
+// app/admin/logs/page.tsx
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
+export default async function AdminLogsPage() {
+  const supabase = await createClient()
+  
+  // Verify admin
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/')
+  
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+  
+  if (profile?.role !== 'admin') redirect('/')
+  
+  // Fetch logs with admin details
+  const { data: logs } = await supabase
+    .from('admin_logs')
+    .select(`
+      *,
+      profiles!admin_id (
+        full_name,
+        avatar_url
+      )
+    `)
+    .order('created_at', { ascending: false })
+    .limit(100)
+  
+  return (
+    <div className="container mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-6">Audit Logs</h1>
+      
+      <div className="space-y-4">
+        {logs?.map((log) => (
+          <div key={log.id} className="border rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <img 
+                src={log.profiles?.avatar_url} 
+                className="w-10 h-10 rounded-full"
+              />
+              <div className="flex-1">
+                <p className="font-medium">
+                  {log.profiles?.full_name || 'Unknown Admin'}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {log.action}
+                </p>
+              </div>
+              <time className="text-sm text-muted-foreground">
+                {new Date(log.created_at).toLocaleString()}
+              </time>
+            </div>
+            
+            {log.details && (
+              <pre className="mt-3 p-3 bg-muted rounded text-xs">
+                {JSON.stringify(log.details, null, 2)}
+              </pre>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+## Common Monitoring Queries
+
+### Activity Summary
+
+```sql
+SELECT 
+  action,
+  COUNT(*) as count,
+  COUNT(DISTINCT admin_id) as unique_admins,
+  MIN(created_at) as first_occurrence,
+  MAX(created_at) as last_occurrence
+FROM admin_logs
+WHERE created_at >= NOW() - INTERVAL '7 days'
+GROUP BY action
+ORDER BY count DESC;
+```
+
+### Most Active Admins
+
+```sql
+SELECT 
+  p.full_name,
+  p.id,
+  COUNT(*) as action_count
+FROM admin_logs al
+JOIN profiles p ON p.id = al.admin_id
+WHERE al.created_at >= NOW() - INTERVAL '30 days'
+GROUP BY p.id, p.full_name
+ORDER BY action_count DESC
+LIMIT 10;
+```
+
+### Daily Action Trend
+
+```sql
+SELECT 
+  DATE(created_at) as date,
+  action,
+  COUNT(*) as count
+FROM admin_logs
+WHERE created_at >= NOW() - INTERVAL '30 days'
+GROUP BY DATE(created_at), action
+ORDER BY date DESC, count DESC;
+```
+
+## Next Steps
+
+- [Admin Overview](/admin/overview) - Learn about admin roles and permissions
+- [Creating Cases](/admin/creating-cases) - Understand what actions are logged
+- [Managing Items](/admin/managing-items) - See how item changes should be tracked

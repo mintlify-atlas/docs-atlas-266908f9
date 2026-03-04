@@ -1,0 +1,128 @@
+---
+title: 'API Overview'
+description: 'Learn how to interact with the Cajas API for case openings and provably fair gaming'
+---
+
+## Introduction
+
+The Cajas API provides endpoints for managing case openings and provably fair seed management. All API endpoints are built using Next.js API routes and require authentication.
+
+## Base URL
+
+```
+https://your-domain.com/api
+```
+
+For local development:
+```
+http://localhost:3000/api
+```
+
+## Authentication
+
+All API endpoints require authentication using Supabase authentication. Requests must include a valid session cookie or authorization header.
+
+<Note>
+Unauthenticated requests will receive a `401 Unauthorized` response.
+</Note>
+
+### Authentication Headers
+
+When making API requests, ensure you include the Supabase authentication token:
+
+```bash
+curl -X GET https://your-domain.com/api/provably-fair/seed \
+  -H "Authorization: Bearer YOUR_SUPABASE_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+## Response Format
+
+All API responses are returned in JSON format.
+
+### Success Response
+
+```json
+{
+  "data": {
+    // Response data
+  }
+}
+```
+
+### Error Response
+
+Error responses follow a consistent format:
+
+```json
+{
+  "error": "Error message description"
+}
+```
+
+## Common Status Codes
+
+<ResponseField name="200" type="OK">
+  Request was successful
+</ResponseField>
+
+<ResponseField name="401" type="Unauthorized">
+  Missing or invalid authentication credentials
+</ResponseField>
+
+<ResponseField name="404" type="Not Found">
+  The requested resource was not found (e.g., case doesn't exist)
+</ResponseField>
+
+<ResponseField name="400" type="Bad Request">
+  Invalid request parameters or case is empty
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  An error occurred on the server
+</ResponseField>
+
+## Rate Limiting
+
+<Warning>
+Rate limiting may be implemented in production environments. Contact your administrator for specific rate limits.
+</Warning>
+
+## Available Endpoints
+
+### Case Management
+- [POST /api/cases/open](/api/cases) - Open a case and receive a random item
+
+### Provably Fair
+- [GET /api/provably-fair/seed](/api/provably-fair) - Get current seed information
+- [POST /api/provably-fair/seed](/api/provably-fair) - Rotate seeds for provably fair gaming
+
+## Data Models
+
+### User Seeds
+
+The system uses a provably fair system with server seeds, client seeds, and nonces:
+
+- **Server Seed**: Generated server-side, kept secret until revealed
+- **Client Seed**: User-provided or generated, known to the user
+- **Nonce**: Incrementing counter for each game round
+- **Server Seed Hash**: SHA-256 hash of the server seed (publicly visible)
+
+### Case Items
+
+Case items include:
+- Item ID and metadata
+- Value (price)
+- Probability (drop chance percentage)
+- Rarity tier (legendary < 1%, epic < 5%, rare < 20%, common >= 20%)
+
+## Getting Started
+
+1. Authenticate with Supabase
+2. Retrieve your current seeds using [GET /api/provably-fair/seed](/api/provably-fair)
+3. Open a case using [POST /api/cases/open](/api/cases)
+4. Verify fairness using the returned seed information
+
+<Tip>
+For a complete guide on implementing provably fair gaming, see the [Provably Fair System](/features/provably-fair) documentation.
+</Tip>

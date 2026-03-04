@@ -1,0 +1,189 @@
+---
+title: 'Introduction to Cajas'
+description: 'A provably fair case opening platform built with Next.js and Supabase'
+keywords: ['cajas', 'case opening', 'provably fair', 'gaming platform', 'next.js', 'supabase']
+icon: 'box'
+---
+
+# Welcome to Cajas
+
+Cajas is a modern, provably fair case opening platform that lets users open virtual cases to win items. Built with Next.js 16 and powered by Supabase, it provides a complete gaming experience with user authentication, wallet management, and transparent fairness verification.
+
+## What is Cajas?
+
+Cajas is a web-based platform where users can:
+
+- Browse and open virtual cases containing items
+- Experience smooth animations and real-time case opening mechanics
+- Verify the fairness of every roll using provably fair technology
+- Manage their balance through an integrated wallet system
+- Track their inventory and transaction history
+- View and manage their profile settings
+
+<Note>
+Cajas implements provably fair gaming algorithms to ensure complete transparency and fairness in all case openings.
+</Note>
+
+## Key Features
+
+<Columns cols={2}>
+  <Card title="Provably Fair System" icon="shield-check" href="/features#provably-fair">
+    Cryptographic verification ensures every case opening is transparent and fair using HMAC-SHA256 algorithms.
+  </Card>
+  
+  <Card title="Real-time Case Opening" icon="sparkles" href="/features#case-opening">
+    Smooth animations and dynamic reel mechanics provide an engaging user experience.
+  </Card>
+  
+  <Card title="Wallet Management" icon="wallet" href="/features#wallet">
+    Integrated balance system with deposit and withdrawal support for multiple payment methods.
+  </Card>
+  
+  <Card title="User Profiles" icon="user" href="/features#profiles">
+    Complete profile management with avatar uploads and personal information.
+  </Card>
+</Columns>
+
+## Technology Stack
+
+Cajas is built with modern web technologies:
+
+- **Frontend**: Next.js 16 with React 19, TypeScript, and Tailwind CSS 4
+- **Backend**: Supabase for authentication, database, and storage
+- **UI Components**: Framer Motion for animations, Lucide React for icons
+- **Forms**: React Hook Form with Zod validation
+- **Styling**: Tailwind CSS with custom design system
+
+## Architecture Overview
+
+The platform follows a modern full-stack architecture:
+
+```plaintext
+┌─────────────────┐
+│   Next.js App   │  ← React Server Components
+└────────┬────────┘
+         │
+         ├─────────────────┐
+         │                 │
+    ┌────▼────┐      ┌─────▼──────┐
+    │ API     │      │ Components │
+    │ Routes  │      │ (Client)   │
+    └────┬────┘      └─────┬──────┘
+         │                 │
+         └────────┬─────────┘
+                  │
+         ┌────────▼──────────┐
+         │   Supabase SDK    │
+         └────────┬──────────┘
+                  │
+    ┌─────────────┴─────────────┐
+    │                           │
+┌───▼────┐  ┌──────────┐  ┌────▼────┐
+│  Auth  │  │ Postgres │  │ Storage │
+└────────┘  └──────────┘  └─────────┘
+```
+
+### Core Components
+
+<AccordionGroup>
+  <Accordion title="Database Schema">
+    The database uses PostgreSQL via Supabase with tables for:
+    - **users**: User profiles and balances
+    - **cases**: Case definitions with prices and metadata
+    - **case_items**: Items within cases with probabilities
+    - **user_seeds**: Provably fair seed management
+    - **game_rolls**: Audit log of all case openings
+    - **transactions**: Balance changes and payments
+  </Accordion>
+  
+  <Accordion title="Authentication">
+    User authentication is handled entirely by Supabase Auth with:
+    - Email/password authentication
+    - OAuth providers support
+    - Row Level Security (RLS) policies
+    - Automatic profile creation on signup
+  </Accordion>
+  
+  <Accordion title="API Routes">
+    Server-side API routes handle sensitive operations:
+    - `POST /api/cases/open` - Opens a case using provably fair logic
+    - `POST /api/provably-fair/seed` - Manages user seeds for fairness
+  </Accordion>
+</AccordionGroup>
+
+## Project Structure
+
+The codebase follows Next.js App Router conventions:
+
+```plaintext
+cajas-app/
+├── app/
+│   ├── (auth)
+│   │   ├── login/          # Login page
+│   │   └── auth/           # Auth callbacks
+│   ├── admin/              # Admin dashboard
+│   ├── api/                # API routes
+│   │   ├── cases/open/     # Case opening logic
+│   │   └── provably-fair/  # Seed management
+│   ├── cases/[slug]/       # Dynamic case pages
+│   ├── profile/            # User profile
+│   ├── wallet/             # Balance management
+│   ├── provably-fair/      # Fairness verification
+│   └── page.tsx            # Homepage
+├── components/             # React components
+│   ├── case-opener.tsx     # Main opening UI
+│   ├── case-browser.tsx    # Case listing
+│   ├── navbar.tsx          # Navigation
+│   └── auth-modal.tsx      # Auth dialogs
+├── lib/
+│   ├── supabase/           # Supabase clients
+│   ├── provably-fair.ts    # Fairness algorithms
+│   └── utils.ts            # Utility functions
+└── supabase/
+    └── migrations/         # Database migrations
+```
+
+## Getting Started
+
+Ready to set up Cajas locally? Head over to the [Quickstart Guide](/quickstart) to get your development environment running in minutes.
+
+<Card title="Quickstart" icon="rocket" href="/quickstart">
+  Clone the repository, set up Supabase, and run your first case opening in under 10 minutes.
+</Card>
+
+## Use Cases
+
+Cajas is perfect for:
+
+- **Gaming Platforms**: Add case opening mechanics to your game
+- **E-commerce**: Create mystery box experiences for products
+- **Marketing**: Engage users with gamified rewards
+- **Learning**: Study provably fair algorithms and modern web architecture
+
+<Warning>
+This platform is designed for educational and entertainment purposes. Ensure you comply with local gambling and gaming regulations when deploying.
+</Warning>
+
+## Community & Support
+
+Need help or want to contribute?
+
+- **GitHub**: [View the source code](https://github.com/yourusername/cajas-app)
+- **Issues**: Report bugs or request features
+- **Discussions**: Share ideas and ask questions
+
+## Next Steps
+
+<Steps>
+  <Step title="Set up your environment">
+    Follow the [Quickstart Guide](/quickstart) to install dependencies and configure Supabase.
+  </Step>
+  
+  <Step title="Explore features">
+    Read the [Features Documentation](/features) to understand all platform capabilities.
+  </Step>
+  
+  <Step title="Deploy to production">
+    Deploy your Cajas instance to Vercel or your preferred hosting platform.
+  </Step>
+</Steps>

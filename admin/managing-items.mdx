@@ -1,0 +1,498 @@
+---
+title: Managing Items
+description: Add items to cases, configure rarities, manage drop rates, and update item properties
+---
+
+## Overview
+
+Items are the rewards players can win from opening cases. Each item has a value, image, and probability that determines how often it drops. Items are created and managed directly within the case creation flow.
+
+## Item Structure
+
+### Database Schema
+
+```typescript
+interface CaseItem {
+  id: string                // UUID
+  case_id: string           // References cases.id
+  name: string              // Display name
+  value: number             // Worth in currency
+  image_url: string         // Public image URL
+  probability: number       // Drop chance (0-100)
+  created_at: string        // ISO timestamp
+}
+```
+
+Reference: `/home/daytona/workspace/source/types/supabase.ts:73-101`
+
+### Item Properties Explained
+
+#### Name
+- **Purpose**: Display name shown to players
+- **Format**: Free text (e.g., "AK-47 | Redline", "Dragon Knife")
+- **Best Practice**: Include item type and variant for clarity
+
+#### Value
+- **Purpose**: Item worth, affects rarity perception
+- **Type**: Decimal number (e.g., 1.50, 99.99)
+- **Usage**: Used for:
+  - Display purposes
+  - Calculating expected case value
+  - Determining "win" vs "loss" for players
+
+#### Image URL
+- **Purpose**: Visual representation of the item
+- **Requirements**: 
+  - Must be a valid, publicly accessible URL
+  - Should load quickly (optimized images)
+  - Recommended format: PNG with transparency
+
+#### Probability
+- **Purpose**: Determines drop rate
+- **Range**: 0-100 (percentage)
+- **Constraint**: All items in a case must sum to exactly 100%
+- **Example**: 
+  - Common item: 45%
+  - Rare item: 5%
+  - Legendary: 1%
+
+## Adding Items to Cases
+
+### During Case Creation
+
+Items are added when creating a new case via the create case form:
+
+```typescript
+const defaultItems = [
+  { name: '', value: 0, image_url: '', probability: 50 },
+  { name: '', value: 0, image_url: '', probability: 50 },
+]
+```
+
+Reference: `/home/daytona/workspace/source/components/admin/create-case-form.tsx:57-60`
+
+### Adding Additional Items
+
+Click "Agregar Ítem" button to add more items (up to 15 total):
+
+```typescript
+const { fields, append, remove } = useFieldArray({
+  control,
+  name: 'items',
+})
+
+// Add new item
+append({ name: '', value: 0, image_url: '', probability: 0 })
+```
+
+Reference: `/home/daytona/workspace/source/components/admin/create-case-form.tsx:64-67`
+
+## Item Limits
+
+### Minimum Items
+- **Minimum**: 2 items per case
+- **Reason**: Ensures variety and meaningful choice
+
+```typescript
+items: z.array(itemSchema)
+  .min(2, 'Mínimo 2 ítems')
+```
+
+Reference: `/home/daytona/workspace/source/components/admin/create-case-form.tsx:25-26`
+
+### Maximum Items
+- **Maximum**: 15 items per case
+- **Reason**: UI/UX constraints and performance
+
+```typescript
+items: z.array(itemSchema)
+  .max(15, 'Máximo 15 ítems')
+```
+
+Reference: `/home/daytona/workspace/source/components/admin/create-case-form.tsx:26`
+
+## Probability Management
+
+### Validation Rules
+
+The system enforces strict probability validation:
+
+```typescript
+.refine((items) => {
+  const total = items.reduce((sum, item) => sum + item.probability, 0)
+  return Math.abs(total - 100) < 0.01
+}, 'La probabilidad total debe ser exactamente 100%')
+```
+
+Reference: `/home/daytona/workspace/source/components/admin/create-case-form.tsx:27-30`
+
+### Real-Time Probability Tracking
+
+The form displays live probability totals:
+
+```typescript
+const items = watch('items')
+const totalProbability = items.reduce(
+  (sum, item) => sum + (Number(item.probability) || 0), 
+  0
+)
+const isProbabilityValid = Math.abs(totalProbability - 100) < 0.01
+```
+
+Indicator colors:
+- **Green**: Total = 100% (valid)
+- **Red**: Total ≠ 100% (invalid)
+
+Reference: `/home/daytona/workspace/source/components/admin/create-case-form.tsx:69-71`
+
+## Rarity Tiers
+
+While not enforced by the database schema, following rarity conventions improves player experience:
+
+### Suggested Rarity Structure
+
+#### Common (Gray)
+- **Probability**: 40-60%
+- **Value**: 0.50 - 2.00
+- **Purpose**: Most frequent drops, base value
+
+#### Uncommon (Light Blue)
+- **Probability**: 20-35%
+- **Value**: 2.00 - 5.00
+- **Purpose**: Regular decent drops
+
+#### Rare (Blue)
+- **Probability**: 10-20%
+- **Value**: 5.00 - 15.00
+- **Purpose**: Notable wins
+
+#### Epic (Purple)
+- **Probability**: 5-10%
+- **Value**: 15.00 - 50.00
+- **Purpose**: Exciting wins
+
+#### Legendary (Gold/Red)
+- **Probability**: 1-5%
+- **Value**: 50.00+
+- **Purpose**: Jackpot items
+
+### Example Distribution
+
+```typescript
+const balancedCase = {
+  items: [
+    // Common (50%)
+    { name: 'Common Skin A', value: 1.00, probability: 25 },
+    { name: 'Common Skin B', value: 1.50, probability: 25 },
+    
+    // Uncommon (30%)
+    { name: 'Uncommon Skin', value: 3.00, probability: 30 },
+    
+    // Rare (15%)
+    { name: 'Rare Skin', value: 8.00, probability: 15 },
+    
+    // Epic (4%)
+    { name: 'Epic Skin', value: 25.00, probability: 4 },
+    
+    // Legendary (1%)
+    { name: 'Legendary Knife', value: 200.00, probability: 1 },
+  ]
+}
+```
+
+## Drop Rate Configuration
+
+### How Drop Rates Work
+
+When a player opens a case:
+
+1. A random number 0-100 is generated
+2. Items are checked in order of probability
+3. The item whose cumulative range includes the random number is selected
+
+Example:
+```typescript
+// Item probabilities: [45%, 30%, 15%, 7%, 3%]
+// Cumulative ranges:
+// Item 1: 0.00 - 45.00
+// Item 2: 45.00 - 75.00
+// Item 3: 75.00 - 90.00
+// Item 4: 90.00 - 97.00
+// Item 5: 97.00 - 100.00
+
+// Random roll: 88.42 → Item 3 is selected
+```
+
+### Setting Fair Drop Rates
+
+1. **Calculate Expected Value**:
+   ```typescript
+   const expectedValue = items.reduce(
+     (sum, item) => sum + (item.value * item.probability / 100),
+     0
+   )
+   ```
+
+2. **House Edge Consideration**:
+   - If price > expected value: Favors the house
+   - If price < expected value: Favors the player
+   - Sweet spot: 85-95% RTP (Return to Player)
+
+3. **Example**:
+   ```typescript
+   const items = [
+     { value: 1.00, probability: 60 },  // 0.60
+     { value: 5.00, probability: 30 },  // 1.50
+     { value: 50.00, probability: 10 }, // 5.00
+   ]
+   // Expected value: 0.60 + 1.50 + 5.00 = $7.10
+   // Good price: $7.99 (89% RTP)
+   ```
+
+## Item Management in Database
+
+### Database Structure
+
+```sql
+CREATE TABLE IF NOT EXISTS case_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id uuid REFERENCES cases(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  value numeric NOT NULL CHECK (value >= 0),
+  image_url text NOT NULL,
+  probability numeric NOT NULL CHECK (probability > 0 AND probability <= 100),
+  created_at timestamptz DEFAULT now()
+);
+```
+
+Reference: `/home/daytona/workspace/source/supabase/migrations/0000_create_cases_system.sql:14-23`
+
+### Cascading Deletes
+
+When a case is deleted, all associated items are automatically removed:
+
+```sql
+ON DELETE CASCADE
+```
+
+This ensures data integrity and prevents orphaned items.
+
+## Row Level Security (RLS)
+
+### Read Access
+
+Anyone can view case items:
+
+```sql
+CREATE POLICY "Public read case_items" ON case_items FOR SELECT USING (true);
+```
+
+### Write Access
+
+Only admins can modify items:
+
+```sql
+CREATE POLICY "Admins insert case_items" ON case_items FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+);
+
+CREATE POLICY "Admins update case_items" ON case_items FOR UPDATE USING (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+);
+
+CREATE POLICY "Admins delete case_items" ON case_items FOR DELETE USING (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+);
+```
+
+Reference: `/home/daytona/workspace/source/supabase/migrations/0000_create_cases_system.sql:53-62`
+
+## Bulk Item Creation
+
+When creating a case, all items are inserted in a single operation:
+
+```typescript
+// Prepare items with case_id
+const itemsWithCaseId = items.map(item => ({
+  case_id: newCase.id,
+  name: item.name,
+  value: item.value,
+  image_url: item.image_url,
+  probability: item.probability,
+}))
+
+// Bulk insert
+const { error: itemsError } = await supabase
+  .from('case_items')
+  .insert(itemsWithCaseId)
+```
+
+Reference: `/home/daytona/workspace/source/app/actions/create-case.ts:109-119`
+
+### Rollback on Failure
+
+If item creation fails, the case is deleted to maintain consistency:
+
+```typescript
+if (itemsError) {
+  // Rollback: Delete the created case
+  await supabase.from('cases').delete().eq('id', newCase.id)
+  return { error: `Failed to create items: ${itemsError.message}` }
+}
+```
+
+Reference: `/home/daytona/workspace/source/app/actions/create-case.ts:121-125`
+
+## Best Practices
+
+### Image Management
+
+- **Consistent Dimensions**: Use square images (512x512 or 1024x1024)
+- **Format**: PNG with transparency for best quality
+- **Optimization**: Compress images (aim for less than 100KB per image)
+- **CDN**: Host on a CDN for fast loading
+- **Naming**: Use descriptive filenames (e.g., `awp-dragon-lore.png`)
+
+### Probability Design
+
+- **Start with high-value items**: Set legendary item probabilities first (1-5%)
+- **Work backwards**: Distribute remaining probability to lower tiers
+- **Use decimals**: 2.5%, 7.3% for fine-tuning
+- **Verify sum**: Always ensure total = 100.00%
+
+### Value Assignment
+
+- **Market research**: Check similar items in other games/platforms
+- **Relative pricing**: Higher rarity = higher value
+- **Psychological pricing**: Use .99 endings (4.99, 9.99)
+- **Avoid zero value**: Minimum value of 0.50 keeps all items meaningful
+
+### Item Naming
+
+- **Be descriptive**: "AK-47 | Redline" > "Red Gun"
+- **Consistent format**: \[Weapon\] | \[Skin Name\]
+- **Avoid special characters**: Stick to alphanumeric and basic symbols
+- **Length**: Keep under 30 characters for UI compatibility
+
+## Common Issues
+
+### Probability Doesn't Sum to 100%
+
+**Symptom**: Red indicator, submit disabled
+
+**Solution**:
+```typescript
+// Check current sum
+const total = items.reduce((s, i) => s + i.probability, 0)
+console.log(total)  // e.g., 99.5
+
+// Adjust last item
+items[items.length - 1].probability += (100 - total)
+```
+
+### Item Value Too Low
+
+**Symptom**: Expected value makes case unprofitable
+
+**Solutions**:
+- Increase high-value item probabilities
+- Add more medium-value items
+- Increase case price
+
+### Image Not Loading
+
+**Symptoms**: Broken image icons in case display
+
+**Checks**:
+1. URL is publicly accessible
+2. URL uses HTTPS
+3. Image file exists at URL
+4. No CORS restrictions
+5. Image format is supported (PNG, JPG, WebP)
+
+## Updating Items
+
+### Current Limitation
+
+The current implementation creates items during case creation. To update items after creation, you would need to:
+
+1. Query existing items:
+   ```typescript
+   const { data: items } = await supabase
+     .from('case_items')
+     .select('*')
+     .eq('case_id', caseId)
+   ```
+
+2. Update specific item:
+   ```typescript
+   await supabase
+     .from('case_items')
+     .update({ probability: newProbability })
+     .eq('id', itemId)
+   ```
+
+3. Ensure probabilities still sum to 100%
+
+### Future Enhancement
+
+Consider adding an "Edit Case" page that allows:
+- Updating item properties
+- Adding/removing items from existing cases
+- Rebalancing probabilities with live preview
+
+## Example: Complete Item Configuration
+
+```typescript
+const exampleCase = {
+  name: "Mystery Box Supreme",
+  price: 19.99,
+  items: [
+    {
+      name: "Common Token",
+      value: 2.00,
+      image_url: "https://cdn.example.com/token-common.png",
+      probability: 40
+    },
+    {
+      name: "Rare Gem",
+      value: 8.00,
+      image_url: "https://cdn.example.com/gem-rare.png",
+      probability: 30
+    },
+    {
+      name: "Epic Sword",
+      value: 20.00,
+      image_url: "https://cdn.example.com/sword-epic.png",
+      probability: 20
+    },
+    {
+      name: "Legendary Crown",
+      value: 75.00,
+      image_url: "https://cdn.example.com/crown-legendary.png",
+      probability: 8
+    },
+    {
+      name: "Mythic Dragon Egg",
+      value: 500.00,
+      image_url: "https://cdn.example.com/dragon-egg.png",
+      probability: 2
+    }
+  ]
+}
+
+// Probability check: 40 + 30 + 20 + 8 + 2 = 100 ✓
+
+// Expected value calculation:
+// (2.00 × 0.40) + (8.00 × 0.30) + (20.00 × 0.20) + (75.00 × 0.08) + (500.00 × 0.02)
+// = 0.80 + 2.40 + 4.00 + 6.00 + 10.00
+// = $23.20
+
+// RTP: 23.20 / 19.99 = 116% (player favored - good for promotions)
+```
+
+## Next Steps
+
+- [Creating Cases](/admin/creating-cases) - Full guide to case creation flow
+- [Monitoring](/admin/monitoring) - Track item drops and player activity
+- [Admin Overview](/admin/overview) - Understand admin permissions

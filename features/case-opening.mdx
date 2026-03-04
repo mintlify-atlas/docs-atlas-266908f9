@@ -1,0 +1,275 @@
+---
+title: 'Case Opening System'
+description: 'Learn how the case opening animation, reel mechanics, and winner selection work'
+icon: 'box-open'
+---
+
+## Overview
+
+The case opening system provides an engaging slot-machine style animation that displays items scrolling across the screen before landing on the winning item. The system integrates with the provably fair API to ensure transparent and verifiable randomness.
+
+## Architecture
+
+<Steps>
+  <Step title="User Initiates Spin">
+    Player clicks the "Abrir Caja" button, triggering the `startSpin()` function
+  </Step>
+  <Step title="Server Determines Winner">
+    Backend uses provably fair algorithm to calculate the winning item using cryptographic seeds
+  </Step>
+  <Step title="Build Animation Reel">
+    Frontend constructs a reel of 110 items with the winner placed at index 75
+  </Step>
+  <Step title="Animate to Winner">
+    CSS transition scrolls the reel over 8 seconds with easing function to land on winner
+  </Step>
+  <Step title="Display Winner Modal">
+    Modal appears showing the won item with rarity glow effects and sell option
+  </Step>
+</Steps>
+
+## Component Structure
+
+The case opener is built using the `CaseOpener` component located at:
+
+```typescript
+// ~/workspace/source/components/case-opener.tsx
+
+interface CaseOpenerProps {
+  items: Item[]        // All possible items in this case
+  casePrice: number    // Cost to open the case
+  caseName: string     // Display name
+  caseId: string       // Database ID for API call
+}
+```
+
+### Key Configuration Constants
+
+```typescript components/case-opener.tsx
+const CARD_WIDTH = 180           // Width of each item card in pixels
+const GAP = 2                    // Gap between cards
+const TOTAL_ITEM_WIDTH = 182     // Card width + gap
+const SPIN_DURATION = 8000       // Animation duration (8 seconds)
+const WINNER_INDEX = 75          // Position where winner is placed in reel
+```
+
+## Animation Mechanics
+
+### Reel Construction
+
+When a spin starts, the component builds a reel array:
+
+```typescript components/case-opener.tsx
+const startSpin = async () => {
+  // 1. Request Winner from Server
+  const response = await fetch('/api/cases/open', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ caseId: caseId })
+  })
+  
+  const data = await response.json()
+  const wonItem = data.winner
+  
+  // 2. Build the Reel around the Winner
+  const filler = shuffle([...items])
+  const newReel: Item[] = []
+  
+  for (let i = 0; i < 110; i++) {
+    if (i === WINNER_INDEX) {
+      newReel.push(wonItem)  // Winner at position 75
+    } else {
+      newReel.push(filler[i % filler.length])
+    }
+  }
+  setReel(newReel)
+}
+```
+
+<Note>
+The winner is **always** placed at index 75 in a 110-item reel. The animation then scrolls to center this item in the viewport.
+</Note>
+
+### Transform Calculation
+
+The animation uses CSS transforms to scroll the reel:
+
+```typescript components/case-opener.tsx
+// Calculate End position to center the winner
+const windowWidth = windowRef.current.clientWidth
+const winningCardCenter = (WINNER_INDEX * TOTAL_ITEM_WIDTH) + (CARD_WIDTH / 2)
+const finalTranslate = (windowWidth / 2) - winningCardCenter
+
+// Apply smooth easing animation
+reelContainerRef.current.style.transition = 
+  `transform ${SPIN_DURATION}ms cubic-bezier(0.15, 0, 0.10, 1)`
+reelContainerRef.current.style.transform = 
+  `translateX(${finalTranslate}px)`
+```
+
+<Info>
+The cubic-bezier easing `(0.15, 0, 0.10, 1)` creates a realistic "slow down" effect, mimicking physical slot machines.
+</Info>
+
+## Sound Effects
+
+The system includes two audio cues:
+
+1. **Tick Sound**: Plays each time the reel crosses to a new item
+2. **Finish Sound**: Plays when winner modal appears
+
+```typescript components/case-opener.tsx
+// Track position during animation
+const checkPosition = () => {
+  const currentIndex = Math.round(rawIndex)
+  
+  if (currentIndex !== lastIndex) {
+    if (!isMuted) {
+      const soundClone = audio.cloneNode() as HTMLAudioElement
+      soundClone.volume = 0.2
+      soundClone.play().catch(() => { })
+    }
+    lastIndex = currentIndex
+  }
+  
+  requestAnimationFrame(checkPosition)
+}
+```
+
+## Rarity System
+
+Items have color-coded rarity indicators:
+
+```typescript components/case-opener.tsx
+const getRarityColor = (rarity: string) => {
+  switch (rarity.toLowerCase()) {
+    case 'legendary': return 'border-b-yellow-500'
+    case 'epic':      return 'border-b-purple-500'
+    case 'rare':      return 'border-b-blue-500'
+    default:          return 'border-b-white/20'
+  }
+}
+```
+
+<CardGroup cols={2}>
+  <Card title="Legendary" icon="star" color="#fbbf24">
+    Yellow border and glow - Highest value items
+  </Card>
+  <Card title="Epic" icon="gem" color="#a855f7">
+    Purple border and glow - High value items
+  </Card>
+  <Card title="Rare" icon="sparkles" color="#3b82f6">
+    Blue border and glow - Medium value items
+  </Card>
+  <Card title="Common" icon="circle" color="#6b7280">
+    White/gray border - Standard items
+  </Card>
+</CardGroup>
+
+## Winner Modal
+
+After the animation completes, a modal displays:
+
+```typescript components/case-opener.tsx
+setTimeout(() => {
+  setIsSpinning(false)
+  setShowWinnerModal(true)
+}, SPIN_DURATION + 500)
+```
+
+The modal includes:
+- Rarity-based background glow
+- Item image with drop shadow
+- Item name and value
+- "Sell" button (currently displays sell price)
+
+## API Integration
+
+The component communicates with the backend API:
+
+```typescript
+POST /api/cases/open
+{
+  "caseId": "uuid-string"
+}
+
+Response:
+{
+  "winner": {
+    "id": "item-uuid",
+    "name": "Item Name",
+    "image_url": "https://...",
+    "rarity": "legendary",
+    "price": 5000,
+    "probability": 2.5
+  },
+  "fairness": {
+    "server_seed_hash": "sha256-hash",
+    "client_seed": "client-seed",
+    "nonce": 42,
+    "roll_value": 0.98234
+  }
+}
+```
+
+<Warning>
+The API returns a 401 Unauthorized if the user is not logged in, triggering the auth modal.
+</Warning>
+
+## Performance Optimizations
+
+<AccordionGroup>
+  <Accordion title="CSS Will-Change">
+    The reel container uses `willChange: 'transform'` to hint the browser to optimize for transform animations.
+  </Accordion>
+  
+  <Accordion title="RequestAnimationFrame">
+    Sound effects are triggered using `requestAnimationFrame` to sync with browser paint cycles, avoiding jank.
+  </Accordion>
+  
+  <Accordion title="Audio Cloning">
+    Each tick sound is cloned from the base Audio object to allow rapid successive plays without interruption.
+  </Accordion>
+</AccordionGroup>
+
+## User Experience Features
+
+### Mute Toggle
+
+Players can toggle sound effects:
+
+```typescript components/case-opener.tsx
+const [isMuted, setIsMuted] = useState(false)
+
+<button onClick={() => setIsMuted(!isMuted)}>
+  {isMuted ? <Volume2 className="text-red-500/50" /> : <Volume2 />}
+</button>
+```
+
+### Visual Indicators
+
+- **Top/Bottom Arrows**: Mark the center line where the winner will land
+- **Center Line**: Vertical line shows exact selection point
+- **Side Fades**: Gradient overlays create depth and focus attention on center
+
+```typescript components/case-opener.tsx
+{/* Center Line Verification */}
+<div className="absolute top-0 bottom-0 left-1/2 w-[2px] 
+              bg-primary/30 -ml-px z-20 pointer-events-none" />
+
+{/* Side Fades */}
+<div className="absolute inset-y-0 left-0 w-40 
+              bg-gradient-to-r from-[#050505] to-transparent 
+              z-20 pointer-events-none" />
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Provably Fair" icon="shield-check" href="/features/provably-fair">
+    Learn how cryptographic verification ensures fair outcomes
+  </Card>
+  <Card title="Wallet System" icon="wallet" href="/features/wallet-system">
+    Understand balance management and transactions
+  </Card>
+</CardGroup>

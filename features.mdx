@@ -1,0 +1,841 @@
+---
+title: 'Platform Features'
+description: 'Complete guide to all features available in Cajas'
+keywords: ['features', 'provably fair', 'case opening', 'wallet', 'admin panel']
+icon: 'sparkles'
+---
+
+# Platform Features
+
+Cajas is packed with features for users, administrators, and developers. This guide covers everything from case opening mechanics to provably fair verification.
+
+## Core Features
+
+### Case Opening System
+
+The heart of Cajas is its dynamic case opening system with smooth animations and real-time results.
+
+<Columns cols={2}>
+  <div>
+    **Key Capabilities:**
+    - Real-time spinning reel animation
+    - Dynamic item probability calculations
+    - Multiple cases support
+    - Item rarity tiers (common, rare, epic, legendary)
+    - Winner reveal modal with item details
+    - Sound effects and visual feedback
+  </div>
+  <div>
+    **Technical Implementation:**
+    - React Server Components for data fetching
+    - Client-side animation with Framer Motion
+    - Optimistic UI updates
+    - Server-side roll verification
+  </div>
+</Columns>
+
+**Case Opening Flow:**
+
+```typescript app/cases/[slug]/page.tsx
+import { createServerClient } from "@supabase/ssr"
+import { cookies } from "next/headers"
+import CaseOpener from "@/components/case-opener"
+import CaseContents from "@/components/case-contents"
+
+export default async function CasePage({ params }: { params: Promise<{ slug: string }> }) {
+    const { slug } = await params
+    const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { /* cookie config */ }
+    )
+
+    // Fetch case details
+    const { data: caseData } = await supabase
+        .from('cases')
+        .select('*')
+        .eq('slug', slug)
+        .single()
+
+    // Fetch case items with probabilities
+    const { data: caseItemsData } = await supabase
+        .from('case_items')
+        .select('*')
+        .eq('case_id', caseData.id)
+
+    // Map data and infer rarity from probability
+    const items = caseItemsData.map((item: any) => {
+        let rarity = 'common'
+        if (item.probability < 1) rarity = 'legendary'
+        else if (item.probability < 5) rarity = 'epic'
+        else if (item.probability < 20) rarity = 'rare'
+
+        return {
+            id: item.id,
+            name: item.name,
+            image_url: item.image_url,
+            price: item.value,
+            probability: item.probability,
+            rarity: rarity
+        }
+    })
+
+    return (
+        <main className="min-h-screen pt-24 pb-20">
+            <CaseOpener
+                items={items}
+                casePrice={caseData.price}
+                caseName={caseData.name}
+                caseId={caseData.id}
+            />
+            <CaseContents items={items} />
+        </main>
+    )
+}
+```
+
+**Rarity System:**
+
+<Tabs>
+  <Tab title="Common">
+    - Probability: 20% - 100%
+    - Visual: Gray/white border
+    - Typical value: Base items
+  </Tab>
+  <Tab title="Rare">
+    - Probability: 5% - 20%
+    - Visual: Blue border
+    - Typical value: 2-3x case price
+  </Tab>
+  <Tab title="Epic">
+    - Probability: 1% - 5%
+    - Visual: Purple border
+    - Typical value: 5-8x case price
+  </Tab>
+  <Tab title="Legendary">
+    - Probability: < 1%
+    - Visual: Gold/yellow border
+    - Typical value: 10x+ case price
+  </Tab>
+</Tabs>
+
+<Info>
+Rarity is automatically inferred from item probability percentages. You can customize rarity thresholds in the case page component.
+</Info>
+
+---
+
+### Provably Fair System
+
+Cajas implements cryptographic provably fair algorithms to ensure every case opening is transparent and verifiable.
+
+**How It Works:**
+
+<Steps>
+  <Step title="Seed Generation">
+    When a user first opens a case, the system generates:
+    - **Server Seed**: 64-character random hex string (kept secret)
+    - **Client Seed**: 32-character random hex string (user-controlled)
+    - **Nonce**: Counter starting at 0 (increments with each roll)
+
+    ```typescript lib/provably-fair.ts
+    import crypto from 'crypto';
+
+    export function generateServerSeed(): string {
+        return crypto.randomBytes(32).toString('hex');
+    }
+
+    export function generateClientSeed(): string {
+        return crypto.randomBytes(16).toString('hex');
+    }
+
+    export function hashSeed(seed: string): string {
+        return crypto.createHash('sha256').update(seed).digest('hex');
+    }
+    ```
+  </Step>
+
+  <Step title="Hash Commitment">
+    Before the roll, the server seed is hashed and shown to the user. This proves the server cannot change the seed after seeing the result.
+
+    ```typescript
+    const serverSeedHash = hashSeed(serverSeed);
+    // User sees: "Server Seed Hash: a3f2b8c9..."
+    ```
+  </Step>
+
+  <Step title="Roll Calculation">
+    The winner is determined using HMAC-SHA256:
+
+    ```typescript lib/provably-fair.ts
+    export function calculateRollResult(
+        serverSeed: string,
+        clientSeed: string,
+        nonce: number
+    ): number {
+        const message = `${clientSeed}-${nonce}`;
+        const hmac = crypto.createHmac('sha256', serverSeed);
+        hmac.update(message);
+        const hex = hmac.digest('hex');
+
+        // Take first 8 characters (32-bit integer)
+        const subHex = hex.substring(0, 8);
+        const decimal = parseInt(subHex, 16);
+
+        // Convert to 0-1 range
+        const MAX_VAL = 0xFFFFFFFF;
+        return decimal / (MAX_VAL + 1);
+    }
+    ```
+  </Step>
+
+  <Step title="Item Selection">
+    The roll result (0-1) is mapped to items based on their probability weights:
+
+    ```typescript lib/provably-fair.ts
+    export function getWinningItem<T extends { probability: number }>(
+        items: T[],
+        roll: number
+    ): T {
+        const totalWeight = items.reduce((sum, item) => sum + (item.probability || 0), 0);
+        let currentThreshold = 0;
+        const target = roll * totalWeight;
+
+        for (const item of items) {
+            currentThreshold += (item.probability || 0);
+            if (target < currentThreshold) {
+                return item;
+            }
+        }
+
+        return items[items.length - 1];
+    }
+    ```
+  </Step>
+
+  <Step title="Verification">
+    After revealing the server seed, users can independently verify the roll:
+
+    1. Hash the server seed and compare to the original hash
+    2. Calculate HMAC with server seed, client seed, and nonce
+    3. Verify the result matches the item won
+  </Step>
+</Steps>
+
+**Database Storage:**
+
+```sql supabase/migrations/20251209000000_create_provably_fair.sql
+-- User seeds (current)
+create table public.user_seeds (
+  user_id uuid references auth.users not null primary key,
+  server_seed text not null,
+  client_seed text not null,
+  nonce bigint not null default 0,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Game rolls (audit log)
+create table public.game_rolls (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users not null,
+  case_id uuid references public.cases not null,
+  server_seed text not null,
+  client_seed text not null,
+  nonce bigint not null,
+  roll_result bigint not null,
+  item_won_id uuid not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+```
+
+<Warning>
+The server seed must remain secret until the user requests seed rotation. Never expose unhashed server seeds in API responses during active gameplay.
+</Warning>
+
+---
+
+### User Authentication
+
+Secure authentication powered by Supabase Auth.
+
+**Features:**
+- Email/password authentication
+- OAuth providers (Google, GitHub, etc.)
+- Email confirmation
+- Password reset flows
+- Session management
+- Row Level Security (RLS)
+
+**Authentication Flow:**
+
+```typescript lib/supabase/server.ts
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+export async function createClient() {
+    const cookieStore = await cookies()
+
+    return createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+            cookies: {
+                getAll() {
+                    return cookieStore.getAll()
+                },
+                setAll(cookiesToSet) {
+                    try {
+                        cookiesToSet.forEach(({ name, value, options }) =>
+                            cookieStore.set(name, value, options)
+                        )
+                    } catch {
+                        // Server Component limitation
+                    }
+                },
+            },
+        }
+    )
+}
+```
+
+**Automatic Profile Creation:**
+
+When a user signs up, a profile is automatically created via database trigger:
+
+```sql
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.users (id, username, avatar_url)
+  values (new.id, new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'avatar_url');
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+```
+
+---
+
+### User Profiles
+
+Comprehensive user profile management system.
+
+**Profile Features:**
+- Full name and contact information
+- Avatar upload with automatic resizing
+- DNI/ID number
+- Phone number
+- Shipping address
+- Profile metadata
+
+**Avatar Upload:**
+
+```typescript app/profile/page.tsx
+const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files[0]
+
+    // Resize image to max 200x200
+    const resizedBlob = await resizeImage(file, 200, 200)
+    const resizedFile = new File([resizedBlob], file.name, { type: file.type })
+
+    const { data: { user } } = await supabase.auth.getUser()
+    const fileExt = file.name.split('.').pop()
+    const filePath = `${user.id}/avatar.${fileExt}`
+
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, resizedFile, { upsert: true })
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath)
+
+    // Update profile
+    await supabase
+        .from('profiles')
+        .upsert({
+            id: user.id,
+            avatar_url: publicUrl,
+            updated_at: new Date().toISOString(),
+        })
+}
+```
+
+**Image Utilities:**
+
+```typescript lib/image-utils.ts
+export async function resizeImage(
+    file: File,
+    maxWidth: number,
+    maxHeight: number
+): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.readAsDataURL(file)
+        reader.onload = (e) => {
+            const img = new Image()
+            img.src = e.target?.result as string
+            img.onload = () => {
+                const canvas = document.createElement('canvas')
+                let width = img.width
+                let height = img.height
+
+                // Calculate new dimensions
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height *= maxWidth / width
+                        width = maxWidth
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width *= maxHeight / height
+                        height = maxHeight
+                    }
+                }
+
+                canvas.width = width
+                canvas.height = height
+                const ctx = canvas.getContext('2d')
+                ctx?.drawImage(img, 0, 0, width, height)
+
+                canvas.toBlob((blob) => {
+                    if (blob) resolve(blob)
+                    else reject(new Error('Failed to create blob'))
+                }, file.type)
+            }
+        }
+    })
+}
+```
+
+---
+
+### Wallet System
+
+Integrated balance management with deposits and withdrawals.
+
+**Features:**
+- Balance tracking
+- Multiple payment methods
+  - Mercado Pago
+  - Binance Pay
+  - AstroPay
+- Deposit with preset amounts
+- Withdrawal with minimum limits
+- Transaction history
+- Currency support (ARS)
+
+**Wallet Interface:**
+
+```typescript app/wallet/page.tsx
+export default function WalletPage() {
+    const [activeTab, setActiveTab] = useState('depositar')
+    const [depositAmount, setDepositAmount] = useState('7000')
+    const [paymentMethod, setPaymentMethod] = useState('pago_movil')
+
+    const depositPresets = ['7000', '15000', '150000', '1500000']
+
+    return (
+        <div className="min-h-screen pt-24 pb-12">
+            {/* Sidebar Navigation */}
+            <div className="space-y-2">
+                {['saldo', 'depositar', 'retirar', 'historial'].map((tab) => (
+                    <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        className={activeTab === tab ? "text-primary bg-primary/5" : "text-muted-foreground"}
+                    >
+                        {tab}
+                    </button>
+                ))}
+            </div>
+
+            {/* Deposit Form */}
+            {activeTab === 'depositar' && (
+                <div className="space-y-6">
+                    {/* Payment method selector */}
+                    <div className="space-y-3">
+                        {['Mercado Pago', 'Binance Pay'].map((method) => (
+                            <button
+                                onClick={() => setPaymentMethod(method)}
+                                className="w-full btn-secondary"
+                            >
+                                {method}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Amount presets */}
+                    <div className="grid grid-cols-3 gap-3">
+                        {depositPresets.map((preset) => (
+                            <button
+                                onClick={() => setDepositAmount(preset)}
+                                className="py-3 rounded-xl"
+                            >
+                                {parseInt(preset).toLocaleString('es-AR')} ARS
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+```
+
+**Database Schema:**
+
+```sql
+create table public.transactions (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.users not null,
+  amount numeric not null,
+  type text not null, -- deposit, withdraw, case_open, item_sell
+  reference_id uuid,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.transactions enable row level security;
+
+create policy "Users can view own transactions."
+  on public.transactions for select
+  using ( auth.uid() = user_id );
+```
+
+<Tip>
+Integrate real payment processors by creating API routes that handle payment webhooks and update user balances accordingly.
+</Tip>
+
+---
+
+### Admin Panel
+
+Powerful admin interface for managing cases and items.
+
+**Admin Features:**
+- Create and edit cases
+- Add items to cases with probabilities
+- Set pricing and rarity
+- Upload images
+- View admin logs
+- User management
+
+**Role-Based Access:**
+
+```sql supabase/migrations/0000_create_cases_system.sql
+-- Add role to profiles
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role text DEFAULT 'user' CHECK (role IN ('user', 'admin'));
+
+-- Admin-only policies
+CREATE POLICY "Admins insert cases" ON cases FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+);
+
+CREATE POLICY "Admins update cases" ON cases FOR UPDATE USING (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+);
+
+CREATE POLICY "Admins delete cases" ON cases FOR DELETE USING (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+);
+```
+
+**Admin Logging:**
+
+```sql
+CREATE TABLE IF NOT EXISTS admin_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  admin_id uuid REFERENCES auth.users(id),
+  action text NOT NULL,
+  details jsonb,
+  created_at timestamptz DEFAULT now()
+);
+```
+
+<Warning>
+Always check user roles on the server side, never trust client-side role checks. Use RLS policies to enforce permissions.
+</Warning>
+
+---
+
+## Additional Features
+
+### Case Browser
+
+Home page case listing with search and filters:
+
+```typescript app/page.tsx
+import { createClient } from '@/lib/supabase/server'
+import CaseBrowser from '@/components/case-browser'
+
+export default async function Home() {
+  const supabase = await createClient()
+  const { data: cases } = await supabase.from('cases').select('*')
+
+  return (
+    <div className="space-y-12">
+      {/* Banner */}
+      <div className="w-full h-[260px] border border-white/5 rounded-xl">
+        <div className="absolute inset-0 bg-gradient-to-r from-[#212431] to-transparent" />
+        <div className="absolute inset-0 flex items-center px-12">
+          <h1 className="text-5xl font-bold">
+            Abri tu <span className="text-primary">suerte</span>
+          </h1>
+        </div>
+      </div>
+
+      {/* Cases Grid */}
+      <CaseBrowser initialCases={cases} />
+    </div>
+  )
+}
+```
+
+### Responsive Design
+
+Fully responsive layout using Tailwind CSS:
+
+- Mobile-first design
+- Breakpoint system (sm, md, lg, xl)
+- Touch-optimized interactions
+- Adaptive navigation
+
+### Animation System
+
+Smooth animations powered by Framer Motion:
+
+```typescript
+import { motion } from 'framer-motion'
+
+<motion.div
+  initial={{ opacity: 0, x: -20 }}
+  animate={{ opacity: 1, x: 0 }}
+  transition={{ duration: 0.3 }}
+>
+  Content
+</motion.div>
+```
+
+### Internationalization
+
+The UI currently supports Spanish (Argentine locale). Text can be easily extracted for translation:
+
+- Spanish UI strings throughout
+- Currency formatting: `toLocaleString('es-AR')`
+- Date formatting with Argentine timezone
+
+<Tip>
+Add i18n support using next-intl or react-i18next for multi-language support.
+</Tip>
+
+---
+
+## Performance Optimizations
+
+<AccordionGroup>
+  <Accordion title="Server Components">
+    Uses React Server Components for fast initial page loads:
+    - Data fetching on the server
+    - Reduced JavaScript bundle size
+    - Automatic code splitting
+  </Accordion>
+
+  <Accordion title="Image Optimization">
+    - Next.js Image component for automatic optimization
+    - Avatar resizing before upload (200x200)
+    - WebP format support
+    - Lazy loading for images
+  </Accordion>
+
+  <Accordion title="Database Queries">
+    - Indexed columns for fast lookups
+    - Row Level Security policies
+    - Connection pooling via Supabase
+    - Prepared statements
+  </Accordion>
+
+  <Accordion title="Caching">
+    - Static generation for public pages
+    - ISR (Incremental Static Regeneration) for case listings
+    - Client-side caching with SWR pattern
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Security Features
+
+<Columns cols={2}>
+  <div>
+    **Authentication Security:**
+    - Supabase Auth with secure sessions
+    - HTTP-only cookies
+    - CSRF protection
+    - Rate limiting on auth endpoints
+  </div>
+  <div>
+    **Database Security:**
+    - Row Level Security (RLS) on all tables
+    - Parameterized queries (SQL injection protection)
+    - Role-based access control
+    - Audit logging for admin actions
+  </div>
+</Columns>
+
+**Environment Variables:**
+
+```bash .env.local
+# Public (safe for client-side)
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJxxx...
+
+# Private (server-side only)
+SUPABASE_SERVICE_ROLE_KEY=eyJxxx...  # DO NOT EXPOSE
+```
+
+<Danger>
+Never expose the `service_role` key in client-side code. It bypasses all RLS policies and grants full database access.
+</Danger>
+
+---
+
+## API Reference
+
+### POST /api/cases/open
+
+Opens a case and returns the winner.
+
+**Request:**
+
+```json
+{
+  "caseId": "uuid",
+  "clientSeed": "optional-custom-seed"
+}
+```
+
+**Response:**
+
+```json
+{
+  "winner": {
+    "id": "uuid",
+    "name": "Item Name",
+    "image_url": "https://...",
+    "price": 1500,
+    "rarity": "rare"
+  },
+  "fairness": {
+    "server_seed_hash": "a3f2b8c9...",
+    "client_seed": "user-seed",
+    "nonce": 42,
+    "roll_value": 0.73251
+  }
+}
+```
+
+**Error Responses:**
+
+- `401 Unauthorized` - User not authenticated
+- `404 Not Found` - Case doesn't exist
+- `400 Bad Request` - Case has no items
+
+---
+
+## Database Schema
+
+**Key Tables:**
+
+<Tabs>
+  <Tab title="users">
+    ```sql
+    create table public.users (
+      id uuid references auth.users not null primary key,
+      username text unique,
+      avatar_url text,
+      balance numeric default 0,
+      client_seed text,
+      nonce integer default 0,
+      created_at timestamp with time zone default timezone('utc'::text, now()) not null
+    );
+    ```
+  </Tab>
+  <Tab title="cases">
+    ```sql
+    create table public.cases (
+      id uuid default uuid_generate_v4() primary key,
+      name text not null,
+      slug text unique not null,
+      price numeric not null,
+      image_url text,
+      description text,
+      created_at timestamp with time zone default timezone('utc'::text, now()) not null
+    );
+    ```
+  </Tab>
+  <Tab title="case_items">
+    ```sql
+    create table public.case_items (
+      id uuid default uuid_generate_v4() primary key,
+      case_id uuid references public.cases not null,
+      name text not null,
+      value numeric not null,
+      image_url text not null,
+      probability numeric not null,
+      created_at timestamp with time zone default timezone('utc'::text, now()) not null
+    );
+    ```
+  </Tab>
+  <Tab title="game_rolls">
+    ```sql
+    create table public.game_rolls (
+      id uuid default gen_random_uuid() primary key,
+      user_id uuid references auth.users not null,
+      case_id uuid references public.cases not null,
+      server_seed text not null,
+      client_seed text not null,
+      nonce bigint not null,
+      roll_result bigint not null,
+      item_won_id uuid not null,
+      created_at timestamp with time zone default timezone('utc'::text, now()) not null
+    );
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Next Steps
+
+Now that you understand all the features:
+
+<Steps>
+  <Step title="Customize Your Platform">
+    Modify colors, branding, and UI components to match your vision.
+  </Step>
+  
+  <Step title="Add Payment Integration">
+    Connect real payment processors for deposits and withdrawals.
+  </Step>
+  
+  <Step title="Deploy to Production">
+    Launch your platform on Vercel or your preferred hosting service.
+  </Step>
+  
+  <Step title="Monitor and Scale">
+    Set up analytics, error tracking, and performance monitoring.
+  </Step>
+</Steps>
+
+<Check>
+You now have a complete understanding of all Cajas platform features!
+</Check>

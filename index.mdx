@@ -1,97 +1,298 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: Welcome to Cajas
+description: A provably fair case opening platform with virtual items, user authentication, and real-time rewards
+mode: custom
 ---
 
-## Setting up
+<div className="relative w-full overflow-hidden bg-gradient-to-br from-[#212431] via-[#1a1d26] to-[#0f1117] dark:from-[#212431] dark:via-[#1a1d26] dark:to-[#0f1117] py-20 border-b border-[#27272a] dark:border-[#27272a]">
+  {/* Decorative Elements */}
+  <div className="absolute inset-0 overflow-hidden pointer-events-none">
+    <div className="absolute top-20 left-10 w-72 h-72 bg-[#ffc44f]/10 rounded-full blur-[100px]" />
+    <div className="absolute bottom-20 right-10 w-96 h-96 bg-[#ffa900]/10 rounded-full blur-[120px]" />
+  </div>
 
-Get your documentation site up and running in minutes.
+  <div className="relative max-w-7xl mx-auto px-6 sm:px-8">
+    <div className="flex flex-col lg:flex-row items-center gap-12">
+      {/* Left Content */}
+      <div className="flex-1 text-center lg:text-left">
+        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white dark:text-white mb-6 tracking-tight">
+          Welcome to <span className="text-[#ffc44f]">Cajas</span> Documentation
+        </h1>
+        <p className="text-lg sm:text-xl text-gray-300 dark:text-gray-300 mb-8 max-w-2xl mx-auto lg:mx-0">
+          Build and deploy a provably fair case opening platform with real-time animations, cryptographic verification, and secure user authentication.
+        </p>
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+        {/* CTA Buttons */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+          <a
+            href="/quickstart"
+            className="inline-flex items-center justify-center px-8 py-3 rounded-lg bg-[#ffc44f] hover:bg-[#ffa900] text-black font-semibold transition-all shadow-lg hover:shadow-xl hover:scale-105 transform no-underline"
+          >
+            Get Started
+          </a>
+          <a
+            href="/api/overview"
+            className="inline-flex items-center justify-center px-8 py-3 rounded-lg border border-[#ffc44f]/30 bg-white/5 hover:bg-white/10 text-white dark:text-white font-semibold transition-all no-underline"
+          >
+            API Reference
+          </a>
+        </div>
+      </div>
 
-## Make it yours
+      {/* Right Image */}
+      <div className="flex-1 flex items-center justify-center">
+        <div className="relative">
+          <div className="absolute inset-0 bg-[#ffc44f]/20 rounded-full blur-[80px]" />
+          <img 
+            src="/logo.png" 
+            alt="Cajas Logo" 
+            noZoom
+            className="relative w-64 h-64 sm:w-80 sm:h-80 object-contain drop-shadow-2xl"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-Design a docs site that looks great and empowers your users.
+{/* Quick Start Section */}
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">Quick start</h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400">Get your Cajas platform up and running in minutes</p>
+  </div>
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+  <Steps>
+    <Step title="Clone the repository">
+      Clone the Cajas repository and install dependencies:
+      
+      ```bash
+      git clone https://github.com/Shermie80/cajas.git
+      cd cajas
+      npm install
+      ```
+    </Step>
 
-## Create beautiful pages
+    <Step title="Set up Supabase">
+      Create a Supabase project and configure your environment variables:
+      
+      ```env
+      NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+      NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+      ```
+      
+      Run the database migrations to set up tables for users, cases, items, and transactions.
+    </Step>
 
-Everything you need to create world-class documentation.
+    <Step title="Run the development server">
+      Start the Next.js development server:
+      
+      ```bash
+      npm run dev
+      ```
+      
+      Open [http://localhost:3000](http://localhost:3000) to see your case opening platform.
+    </Step>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+    <Step title="Open your first case">
+      Create a user account, load virtual currency into your wallet, and open your first case to see the provably fair system in action with real-time animations.
+    </Step>
+  </Steps>
+</div>
 
-## Need inspiration?
+{/* Features Grid */}
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">Explore features</h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400">Everything you need to build a transparent case opening platform</p>
+  </div>
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+  <CardGroup cols={2}>
+    <Card title="Provably Fair System" icon="shield-check" href="/features/provably-fair">
+      Cryptographic verification using HMAC-SHA256 ensures every case opening is transparent and verifiable
+    </Card>
+    <Card title="Case Opening" icon="box-open" href="/features/case-opening">
+      Real-time animated case opening with sound effects and rarity-based reward distribution
+    </Card>
+    <Card title="Wallet System" icon="wallet" href="/features/wallet-system">
+      Virtual currency management with deposits, balance tracking, and transaction history
+    </Card>
+    <Card title="User Inventory" icon="bag-shopping" href="/features/user-inventory">
+      Manage won items with status tracking, selling capabilities, and inventory management
+    </Card>
+    <Card title="Admin Panel" icon="user-shield" href="/admin/overview">
+      Create and manage cases, configure items, set drop rates, and monitor platform activity
+    </Card>
+    <Card title="Authentication" icon="key" href="/user-guide/authentication">
+      Secure user authentication powered by Supabase with profile management
+    </Card>
+  </CardGroup>
+</div>
+
+{/* Technical Highlights */}
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">Built with modern technologies</h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400">Powered by industry-leading frameworks and tools</p>
+  </div>
+
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div className="group border border-gray-200 dark:border-[#27272a] rounded-2xl p-6 bg-white dark:bg-[#1a1d27] hover:border-[#ffc44f] dark:hover:border-[#ffc44f] transition-all">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-10 h-10 rounded-lg bg-[#ffc44f]/10 flex items-center justify-center">
+          <svg className="w-6 h-6 text-[#ffc44f]" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M11.572 0c-.176 0-.31.001-.358.007a19.76 19.76 0 0 1-.364.033C7.443.346 4.25 2.185 2.228 5.012a11.875 11.875 0 0 0-2.119 5.243c-.096.659-.108.854-.108 1.747s.012 1.089.108 1.748c.652 4.506 3.86 8.292 8.209 9.695.779.25 1.6.422 2.534.525.363.04 1.935.04 2.299 0 1.611-.178 2.977-.577 4.323-1.264.207-.106.247-.134.219-.158-.02-.013-.9-1.193-1.955-2.62l-1.919-2.592-2.404-3.558a338.739 338.739 0 0 0-2.422-3.556c-.009-.002-.018 1.579-.023 3.51-.007 3.38-.01 3.515-.052 3.595a.426.426 0 0 1-.206.214c-.075.037-.14.044-.495.044H7.81l-.108-.068a.438.438 0 0 1-.157-.171l-.05-.106.006-4.703.007-4.705.072-.092a.645.645 0 0 1 .174-.143c.096-.047.134-.051.54-.051.478 0 .558.018.682.154.035.038 1.337 1.999 2.895 4.361a10760.433 10760.433 0 0 0 4.735 7.17l1.9 2.879.096-.063a12.317 12.317 0 0 0 2.466-2.163 11.944 11.944 0 0 0 2.824-6.134c.096-.66.108-.854.108-1.748 0-.893-.012-1.088-.108-1.747-.652-4.506-3.859-8.292-8.208-9.695a12.597 12.597 0 0 0-2.499-.523A33.119 33.119 0 0 0 11.573 0zm4.069 7.217c.347 0 .408.005.486.047a.473.473 0 0 1 .237.277c.018.06.023 1.365.018 4.304l-.006 4.218-.744-1.14-.746-1.14v-3.066c0-1.982.01-3.097.023-3.15a.478.478 0 0 1 .233-.296c.096-.05.13-.054.5-.054z"/>
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Next.js 16</h3>
+      </div>
+      <p className="text-sm text-gray-600 dark:text-gray-400">
+        Server-side rendering, API routes, and optimized performance with React 19
+      </p>
+    </div>
+
+    <div className="group border border-gray-200 dark:border-[#27272a] rounded-2xl p-6 bg-white dark:bg-[#1a1d27] hover:border-[#ffc44f] dark:hover:border-[#ffc44f] transition-all">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-10 h-10 rounded-lg bg-[#ffc44f]/10 flex items-center justify-center">
+          <svg className="w-6 h-6 text-[#ffc44f]" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 17.068a.625.625 0 0 1-.875.16c-2.4-1.467-5.426-1.8-8.987-.986a.625.625 0 1 1-.253-1.224c3.902-.891 7.23-.508 9.955 1.175.294.18.387.565.16.875zm1.249-2.776a.781.781 0 0 1-1.093.201c-2.747-1.689-6.934-2.178-10.178-1.192a.781.781 0 1 1-.447-1.497c3.71-1.127 8.346-.582 11.516 1.395.376.231.495.725.202 1.093zm.107-2.892c-3.296-1.958-8.732-2.138-11.879-1.182a.937.937 0 1 1-.538-1.797c3.613-1.095 9.642-.882 13.428 1.367a.937.937 0 1 1-.011 1.612z"/>
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Supabase</h3>
+      </div>
+      <p className="text-sm text-gray-600 dark:text-gray-400">
+        PostgreSQL database, authentication, and real-time subscriptions
+      </p>
+    </div>
+
+    <div className="group border border-gray-200 dark:border-[#27272a] rounded-2xl p-6 bg-white dark:bg-[#1a1d27] hover:border-[#ffc44f] dark:hover:border-[#ffc44f] transition-all">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-10 h-10 rounded-lg bg-[#ffc44f]/10 flex items-center justify-center">
+          <svg className="w-6 h-6 text-[#ffc44f]" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12.001 4.8c-3.2 0-5.2 1.6-6 4.8 1.2-1.6 2.6-2.2 4.2-1.8.913.228 1.565.89 2.288 1.624C13.666 10.618 15.027 12 18.001 12c3.2 0 5.2-1.6 6-4.8-1.2 1.6-2.6 2.2-4.2 1.8-.913-.228-1.565-.89-2.288-1.624C16.337 6.182 14.976 4.8 12.001 4.8zm-6 7.2c-3.2 0-5.2 1.6-6 4.8 1.2-1.6 2.6-2.2 4.2-1.8.913.228 1.565.89 2.288 1.624 1.177 1.194 2.538 2.576 5.512 2.576 3.2 0 5.2-1.6 6-4.8-1.2 1.6-2.6 2.2-4.2 1.8-.913-.228-1.565-.89-2.288-1.624C10.337 13.382 8.976 12 6.001 12z"/>
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Tailwind CSS</h3>
+      </div>
+      <p className="text-sm text-gray-600 dark:text-gray-400">
+        Utility-first CSS with Framer Motion for smooth animations
+      </p>
+    </div>
+  </div>
+</div>
+
+{/* Documentation Navigation */}
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">Explore documentation</h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400">Comprehensive guides for users, developers, and administrators</p>
+  </div>
+
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <a href="/user-guide/authentication" className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] overflow-hidden no-underline hover:border-[#ffc44f] dark:hover:border-[#ffc44f] transition-all bg-white dark:bg-[#1a1d27]">
+      <div className="h-32 overflow-hidden flex items-center justify-center bg-gradient-to-br from-[#ffc44f]/10 to-[#ffa900]/10">
+        <svg className="w-16 h-16 text-[#ffc44f]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      </div>
+      <div className="p-6">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">User Guide</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Learn how to authenticate, open cases, manage your inventory, and handle your wallet
+        </p>
+        <div className="flex items-center gap-2 text-[#ffc44f] group-hover:text-[#ffa900] text-sm font-medium">
+          Read guide
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+
+    <a href="/admin/overview" className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] overflow-hidden no-underline hover:border-[#ffc44f] dark:hover:border-[#ffc44f] transition-all bg-white dark:bg-[#1a1d27]">
+      <div className="h-32 overflow-hidden flex items-center justify-center bg-gradient-to-br from-[#ffc44f]/10 to-[#ffa900]/10">
+        <svg className="w-16 h-16 text-[#ffc44f]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      </div>
+      <div className="p-6">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Admin Guide</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Configure cases, manage items, set drop rates, and monitor platform activity
+        </p>
+        <div className="flex items-center gap-2 text-[#ffc44f] group-hover:text-[#ffa900] text-sm font-medium">
+          Read guide
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+
+    <a href="/technical/overview" className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] overflow-hidden no-underline hover:border-[#ffc44f] dark:hover:border-[#ffc44f] transition-all bg-white dark:bg-[#1a1d27]">
+      <div className="h-32 overflow-hidden flex items-center justify-center bg-gradient-to-br from-[#ffc44f]/10 to-[#ffa900]/10">
+        <svg className="w-16 h-16 text-[#ffc44f]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+        </svg>
+      </div>
+      <div className="p-6">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Technical Reference</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Deep dive into architecture, provably fair algorithms, and API endpoints
+        </p>
+        <div className="flex items-center gap-2 text-[#ffc44f] group-hover:text-[#ffa900] text-sm font-medium">
+          Explore docs
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+
+    <a href="/deployment/environment-setup" className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] overflow-hidden no-underline hover:border-[#ffc44f] dark:hover:border-[#ffc44f] transition-all bg-white dark:bg-[#1a1d27]">
+      <div className="h-32 overflow-hidden flex items-center justify-center bg-gradient-to-br from-[#ffc44f]/10 to-[#ffa900]/10">
+        <svg className="w-16 h-16 text-[#ffc44f]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+        </svg>
+      </div>
+      <div className="p-6">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Deployment</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Set up your environment, configure Supabase, and deploy to production
+        </p>
+        <div className="flex items-center gap-2 text-[#ffc44f] group-hover:text-[#ffa900] text-sm font-medium">
+          Deploy now
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+{/* Closing CTA */}
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="relative overflow-hidden rounded-2xl border border-[#ffc44f]/30 bg-gradient-to-br from-[#212431] to-[#1a1d26] dark:from-[#212431] dark:to-[#1a1d26] p-12 text-center">
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <div className="absolute top-0 left-1/4 w-64 h-64 bg-[#ffc44f]/10 rounded-full blur-[80px]" />
+      <div className="absolute bottom-0 right-1/4 w-64 h-64 bg-[#ffa900]/10 rounded-full blur-[80px]" />
+    </div>
+    
+    <div className="relative z-10">
+      <h2 className="text-3xl font-bold text-white dark:text-white mb-4">
+        Ready to get started?
+      </h2>
+      <p className="text-lg text-gray-300 dark:text-gray-300 mb-8 max-w-2xl mx-auto">
+        Deploy your own provably fair case opening platform and start building trust with your users through transparent, verifiable randomness.
+      </p>
+      <a
+        href="/quickstart"
+        className="inline-flex items-center justify-center px-8 py-3 rounded-lg bg-[#ffc44f] hover:bg-[#ffa900] text-black font-semibold transition-all shadow-lg hover:shadow-xl hover:scale-105 transform no-underline"
+      >
+        Start Building Now
+      </a>
+    </div>
+  </div>
+</div>

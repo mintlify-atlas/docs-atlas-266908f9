@@ -1,0 +1,663 @@
+---
+title: 'Wallet Management'
+description: 'Load balance, view transactions, and withdraw funds from your Cajas wallet'
+icon: 'wallet'
+---
+
+## Understanding Your Wallet
+
+Your wallet is the financial hub of your Cajas account. It tracks your balance, deposits, withdrawals, and all transactions.
+
+### Wallet Overview
+
+Access your wallet at `/wallet` or click the **+** button next to your balance in the navbar.
+
+<CardGroup cols={2}>
+  <Card title="Current Balance" icon="coins">
+    Your available funds in ARS (Argentine Pesos).
+    
+    Visible in:
+    - Navbar (desktop)
+    - Wallet page header
+    - Profile dropdown
+  </Card>
+
+  <Card title="Transaction History" icon="clock-rotate-left">
+    Complete record of:
+    - Deposits
+    - Withdrawals
+    - Case openings
+    - Item sales
+  </Card>
+
+  <Card title="Payment Methods" icon="credit-card">
+    Supported methods:
+    - Mercado Pago (ARS)
+    - Binance Pay (Crypto)
+    - More coming soon
+  </Card>
+
+  <Card title="Minimum Amounts" icon="arrow-down-to-line">
+    - **Deposit:** $7,000 ARS minimum
+    - **Withdrawal:** $1,000 ARS minimum
+    - **Bonus:** 10% on deposits ≥ $10,000
+  </Card>
+</CardGroup>
+
+## Wallet Page Interface
+
+The wallet page (`/app/wallet/page.tsx`) features a sidebar navigation with four tabs:
+
+<Tabs>
+  <Tab title="Saldo (Balance)">
+    View your current balance and account summary.
+    
+    **Empty State:**
+    - Displays gaucho mascot image
+    - Message: "Sin saldo disponible"
+    - Prompt to make a deposit
+  </Tab>
+
+  <Tab title="Depositar (Deposit)">
+    Add funds to your account.
+    
+    Features:
+    - Currency selector (defaults to ARS)
+    - Payment method selection
+    - Amount input with presets
+    - Bonus information banner
+    - Submit button
+  </Tab>
+
+  <Tab title="Retirar (Withdraw)">
+    Cash out your balance.
+    
+    Features:
+    - Currency selector
+    - Withdrawal method dropdown
+    - Amount input with percentage buttons
+    - Minimum amount indicator
+    - Submit button
+  </Tab>
+
+  <Tab title="Historial (History)">
+    View all transactions.
+    
+    **Empty State:**
+    - Displays gaucho mascot image
+    - Message: "Sin movimientos"
+    - Explanation that history appears here
+  </Tab>
+</Tabs>
+
+## Depositing Funds
+
+Add balance to your account to start opening cases.
+
+<Steps>
+  <Step title="Navigate to Deposit Tab">
+    1. Go to `/wallet`
+    2. Click **"Depositar"** in the sidebar
+    
+    The deposit form loads with default values.
+  </Step>
+
+  <Step title="Select Currency">
+    Click the currency dropdown (shows ARS flag by default).
+    
+    Currently supported:
+    - **ARS** (Argentine Peso) - Primary currency
+    
+    <Note>
+      Future currencies may include USD, EUR, and various cryptocurrencies.
+    </Note>
+  </Step>
+
+  <Step title="Choose Payment Method">
+    Two payment methods are available:
+
+    ### Mercado Pago
+    - Most popular for ARS deposits
+    - Instant processing
+    - Supports debit/credit cards
+    - Bank transfers
+    - Mercado Pago balance
+
+    ### Binance Pay
+    - For cryptocurrency deposits
+    - Supports multiple crypto assets
+    - Converted to ARS at current rate
+    - Lower fees for large amounts
+    
+    Click your preferred method. A blue indicator appears when selected.
+  </Step>
+
+  <Step title="Enter CUIT/CUIL">
+    Required for compliance:
+    
+    **Campo:** Número de CUIT/CUIL (marked with red asterisk)
+    
+    Format: `20-12345678-9`
+    
+    This is your tax identification number used for:
+    - Payment verification
+    - Regulatory compliance
+    - Withdrawal processing
+  </Step>
+
+  <Step title="Set Deposit Amount">
+    Two ways to enter amount:
+
+    ### Manual Input
+    Type the amount in the input field (font-mono, bold for clarity).
+
+    ### Quick Presets
+    Click one of the preset buttons:
+    - **$7,000** (minimum)
+    - **$15,000**
+    - **$150,000**
+    - **$1,500,000**
+    
+    Selected preset highlights in yellow with a glow effect.
+  </Step>
+
+  <Step title="Review Bonus">
+    The yellow banner shows:
+    
+    **"Obtén un bono adicional de 10% con un depósito mínimo de $10.000"**
+    
+    If your amount is ≥ $10,000, you'll receive:
+    - 10% extra balance
+    - Example: Deposit $10,000 → Receive $11,000
+  </Step>
+
+  <Step title="Submit Deposit">
+    Click **"Depositar"** button at the bottom.
+    
+    The system:
+    1. Validates the amount (≥ $7,000)
+    2. Validates CUIT/CUIL format
+    3. Generates payment request
+    4. Redirects to payment gateway
+  </Step>
+
+  <Step title="Complete Payment">
+    At the payment gateway:
+    
+    **Mercado Pago:**
+    - Choose payment method
+    - Enter card/bank details
+    - Confirm payment
+    - Redirected back to Cajas
+
+    **Binance Pay:**
+    - Scan QR code
+    - Confirm in Binance app
+    - Payment processes
+    - Redirected back to Cajas
+  </Step>
+
+  <Step title="Confirmation">
+    After successful payment:
+    - Balance updates immediately
+    - Transaction appears in history
+    - Bonus (if applicable) is added
+    - Success notification displays
+    
+    You can now use your balance to open cases!
+  </Step>
+</Steps>
+
+<Warning>
+  **Important Deposit Rules:**
+  
+  1. Transfer amount must EXACTLY match the deposit amount
+  2. Each payment ID can only be used once
+  3. Payments typically process within 5-10 minutes
+  4. If payment fails, funds are not deducted
+  
+  See the info box at the bottom of the deposit form for details.
+</Warning>
+
+## Withdrawing Funds
+
+Cash out your balance to your bank account or payment method.
+
+<Steps>
+  <Step title="Navigate to Withdraw Tab">
+    1. Go to `/wallet`
+    2. Click **"Retirar"** in the sidebar
+    
+    The withdrawal form loads with your current balance.
+  </Step>
+
+  <Step title="Check Minimum Balance">
+    The minimum withdrawal is displayed in a red badge:
+    
+    **"Mín: 1,000.00 ARS"**
+    
+    If your balance is below this, you cannot withdraw.
+  </Step>
+
+  <Step title="Select Withdrawal Method">
+    Click the method dropdown.
+    
+    Currently shown:
+    - **AstroPay** (example placeholder)
+    
+    <Note>
+      The actual withdrawal methods available depend on:
+      - Your region
+      - Your deposit method
+      - Regulatory requirements
+      - Account verification status
+    </Note>
+  </Step>
+
+  <Step title="Enter Withdrawal Amount">
+    Two ways to set amount:
+
+    ### Manual Input
+    Type the amount in the input field.
+
+    ### Percentage Buttons
+    Quick shortcuts:
+    - **Mín** - Minimum amount ($1,000)
+    - **25%** - Quarter of balance
+    - **50%** - Half of balance  
+    - **Máx** - Full balance
+    
+    These buttons calculate based on your current balance.
+  </Step>
+
+  <Step title="Submit Withdrawal Request">
+    Click **"Solicitar Retiro"** (Request Withdrawal) button.
+    
+    The system:
+    1. Verifies amount ≥ minimum
+    2. Verifies amount ≤ available balance
+    3. Checks account verification
+    4. Creates withdrawal request
+  </Step>
+
+  <Step title="Processing">
+    Withdrawal requests typically:
+    - **Instant to 24 hours** - Crypto withdrawals
+    - **1-3 business days** - Bank transfers
+    - **3-5 business days** - International transfers
+    
+    You'll receive:
+    - Email confirmation
+    - Transaction ID
+    - Expected completion date
+  </Step>
+
+  <Step title="Completion">
+    Once processed:
+    - Funds arrive in your account
+    - Transaction marked as "completed"
+    - Balance reflects the deduction
+  </Step>
+</Steps>
+
+<Warning>
+  **Withdrawal Restrictions:**
+  
+  - Account must be verified (ID + address)
+  - CUIT/CUIL must be provided
+  - Cannot withdraw bonus funds until wagered
+  - Withdrawals may be audited for compliance
+  
+  If your withdrawal is delayed, check your email for requests for additional information.
+</Warning>
+
+## Transaction History
+
+Every action that affects your balance is recorded.
+
+### Transaction Types
+
+The `transactions` table tracks four types:
+
+<Tabs>
+  <Tab title="Deposit">
+    **Type:** `deposit`
+    
+    Recorded when:
+    - You complete a payment
+    - Funds are added to balance
+    - Bonuses are applied
+    
+    **Fields:**
+    - Amount (positive)
+    - Payment method
+    - Reference ID (payment gateway ID)
+    - Timestamp
+  </Tab>
+
+  <Tab title="Withdrawal">
+    **Type:** `withdraw`
+    
+    Recorded when:
+    - Withdrawal request is approved
+    - Funds leave your balance
+    
+    **Fields:**
+    - Amount (negative)
+    - Withdrawal method
+    - Reference ID (payout ID)
+    - Status (pending/completed)
+    - Timestamp
+  </Tab>
+
+  <Tab title="Case Opening">
+    **Type:** `case_open`
+    
+    Recorded when:
+    - You open a case
+    - Case price is deducted
+    
+    **Fields:**
+    - Amount (negative)
+    - Reference ID (case ID)
+    - Timestamp
+    
+    This links to the `provably_fair_games` table.
+  </Tab>
+
+  <Tab title="Item Sale">
+    **Type:** `item_sell`
+    
+    Recorded when:
+    - You sell an item from inventory
+    - Item value is added to balance
+    
+    **Fields:**
+    - Amount (positive)
+    - Reference ID (item ID)
+    - Timestamp
+  </Tab>
+</Tabs>
+
+### Viewing History
+
+The history tab will display transactions in a table format:
+
+<ResponseField name="Table Columns" type="layout">
+  - **Type** - Icon indicating transaction type
+  - **Description** - Human-readable description
+  - **Amount** - Formatted currency (green for + / red for -)
+  - **Date** - Relative time (e.g., "2 hours ago")
+  - **Status** - Badge showing current status
+  - **Actions** - View details, receipt, support
+</ResponseField>
+
+### Filtering History
+
+Customize your transaction view:
+
+<CardGroup cols={3}>
+  <Card title="By Type">
+    - All Transactions
+    - Deposits Only
+    - Withdrawals Only
+    - Case Opens
+    - Item Sales
+  </Card>
+
+  <Card title="By Date">
+    - Last 24 Hours
+    - Last 7 Days
+    - Last 30 Days
+    - Last Year
+    - All Time
+    - Custom Range
+  </Card>
+
+  <Card title="By Amount">
+    - All Amounts
+    - Above $X
+    - Below $X
+    - Range ($X - $Y)
+  </Card>
+</CardGroup>
+
+### Exporting History
+
+Download your transaction history:
+
+<Steps>
+  <Step title="Click Export">
+    On the history tab, click the **"Exportar"** button in the top-right.
+  </Step>
+
+  <Step title="Choose Format">
+    Select export format:
+    - **CSV** - For spreadsheets
+    - **PDF** - For records/printing
+    - **JSON** - For developers
+  </Step>
+
+  <Step title="Download">
+    The file downloads with filename:
+    
+    `cajas-transactions-{start-date}-{end-date}.{format}`
+  </Step>
+</Steps>
+
+## Balance Display
+
+Your balance is shown in multiple locations:
+
+### Navbar (Desktop)
+
+```
+[Argentina Flag Icon] $XX,XXX.XX  [+ Button]
+```
+
+- Updates in real-time
+- Currency formatted with thousands separators
+- **+ Button** opens wallet deposit tab
+- Green glow effect on the add button
+
+### Mobile Dropdown
+
+On mobile, balance appears in the profile dropdown:
+
+- Wallet icon
+- **"Balance"** label
+- Amount displayed
+- Tap to navigate to `/wallet`
+
+### Wallet Page Header
+
+Large, prominent display:
+
+- Bold typography
+- Currency icon
+- Exact amount with cents
+- Last updated timestamp
+
+## Payment Security
+
+<CardGroup cols={2}>
+  <Card title="Secure Gateways" icon="lock">
+    All payments processed through:
+    - PCI-DSS compliant providers
+    - Encrypted connections (HTTPS)
+    - Secure tokenization
+    - No card data stored
+  </Card>
+
+  <Card title="Identity Verification" icon="id-card">
+    Required for withdrawals:
+    - Government-issued ID
+    - Proof of address
+    - CUIT/CUIL validation
+    - Phone verification
+  </Card>
+
+  <Card title="Transaction Monitoring" icon="radar">
+    Automated fraud detection:
+    - Unusual patterns flagged
+    - Large transactions reviewed
+    - Duplicate prevention
+    - Chargeback protection
+  </Card>
+
+  <Card title="Regulatory Compliance" icon="scale-balanced">
+    Following all local laws:
+    - AML (Anti-Money Laundering)
+    - KYC (Know Your Customer)
+    - Tax reporting (when required)
+    - Consumer protection
+  </Card>
+</CardGroup>
+
+## Database Structure
+
+For developers, here's the wallet data model:
+
+### Users Balance
+
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  username TEXT,
+  balance NUMERIC DEFAULT 0,
+  created_at TIMESTAMP
+);
+```
+
+### Transactions Table
+
+```sql
+CREATE TABLE transactions (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users,
+  amount NUMERIC NOT NULL,
+  type TEXT NOT NULL,  -- deposit, withdraw, case_open, item_sell
+  reference_id UUID,   -- links to related record
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Key Queries
+
+**Get Balance:**
+```sql
+SELECT balance FROM users WHERE id = $1;
+```
+
+**Add Funds:**
+```sql
+UPDATE users SET balance = balance + $1 WHERE id = $2;
+INSERT INTO transactions (user_id, amount, type) VALUES ($2, $1, 'deposit');
+```
+
+**Deduct Funds:**
+```sql
+UPDATE users SET balance = balance - $1 WHERE id = $2;
+INSERT INTO transactions (user_id, amount, type) VALUES ($2, -$1, 'case_open');
+```
+
+**Transaction History:**
+```sql
+SELECT * FROM transactions
+WHERE user_id = $1
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Deposit not showing in balance">
+    **Possible causes:**
+    - Payment still processing (wait 10 minutes)
+    - Payment failed at gateway
+    - Network error during callback
+    
+    **Solution:**
+    1. Check your email for payment confirmation
+    2. Check payment method (Mercado Pago/bank) for charge
+    3. Refresh the wallet page
+    4. Contact support with payment reference ID
+  </Accordion>
+
+  <Accordion title="Cannot withdraw funds">
+    **Possible causes:**
+    - Balance below minimum ($1,000)
+    - Account not verified
+    - Active wagering requirements
+    - Technical issue
+    
+    **Solution:**
+    1. Verify your balance is sufficient
+    2. Complete account verification in profile
+    3. Check for wagering requirements (bonus terms)
+    4. Try again in a few minutes
+  </Accordion>
+
+  <Accordion title="Balance showing incorrectly">
+    **Possible causes:**
+    - Browser cache
+    - Session sync issue
+    - Database lag
+    
+    **Solution:**
+    1. Hard refresh the page (Ctrl+Shift+R)
+    2. Log out and log back in
+    3. Clear browser cache
+    4. Check transaction history for accuracy
+  </Accordion>
+
+  <Accordion title="Payment gateway error">
+    **Common errors:**
+    - "Amount mismatch"
+    - "Payment ID already used"
+    - "Gateway timeout"
+    
+    **Solution:**
+    1. Return to deposit form
+    2. Generate new payment request
+    3. Use exact amount shown
+    4. Complete within time limit (usually 30 minutes)
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Budget Wisely" icon="calculator">
+    - Set a deposit limit
+    - Track your spending
+    - Don't chase losses
+    - Withdraw winnings regularly
+  </Card>
+
+  <Card title="Verify Before Large Deposits" icon="shield-check">
+    - Complete account verification
+    - Test with small deposit first
+    - Save payment confirmations
+    - Keep receipts for taxes
+  </Card>
+
+  <Card title="Monitor Transactions" icon="chart-simple">
+    - Check history weekly
+    - Report any discrepancies
+    - Save export for records
+    - Track profit/loss
+  </Card>
+
+  <Card title="Secure Your Account" icon="user-shield">
+    - Use strong password
+    - Enable 2FA (when available)
+    - Don't share credentials
+    - Log out on shared devices
+  </Card>
+</CardGroup>
+
+<Tip>
+  **Pro Tip:** Deposit slightly more than you plan to spend to account for the 10% bonus threshold. For example, deposit $11,000 to get $12,100 total (including bonus), giving you more value than depositing $10,000 twice separately.
+</Tip>

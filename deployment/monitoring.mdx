@@ -1,0 +1,827 @@
+---
+title: 'Monitoring & Observability'
+description: 'Set up comprehensive monitoring including logging, error tracking, performance monitoring, and database query analysis for production'
+---
+
+## Overview
+
+Effective monitoring is essential for maintaining a production gambling application. This guide covers logging, error tracking, performance monitoring, and database observability to ensure your Cajas deployment runs smoothly.
+
+## Logging Strategy
+
+### Vercel Function Logs
+
+Vercel automatically captures logs from all serverless functions and API routes:
+
+<CodeGroup>
+```typescript Structured Logging
+// Use structured logging for better searchability
+export async function POST(request: Request) {
+  const startTime = Date.now();
+  
+  try {
+    const { caseId } = await request.json();
+    
+    console.log(JSON.stringify({
+      level: 'info',
+      event: 'case_open_started',
+      caseId,
+      timestamp: new Date().toISOString()
+    }));
+    
+    // ... process case opening ...
+    
+    const duration = Date.now() - startTime;
+    console.log(JSON.stringify({
+      level: 'info',
+      event: 'case_open_completed',
+      caseId,
+      duration,
+      timestamp: new Date().toISOString()
+    }));
+    
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: 'error',
+      event: 'case_open_failed',
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    }));
+  }
+}
+```
+
+```typescript Error Context
+// Include relevant context in error logs
+try {
+  await processCaseOpening(caseId, userId);
+} catch (error) {
+  console.error('Case opening failed', {
+    error: error.message,
+    caseId,
+    userId,
+    context: {
+      userBalance: user.balance,
+      casePrice: caseData.price,
+      timestamp: Date.now()
+    }
+  });
+  throw error;
+}
+```
+</CodeGroup>
+
+### Accessing Vercel Logs
+
+<Tabs>
+  <Tab title="Dashboard">
+    1. Open your project on [Vercel Dashboard](https://vercel.com)
+    2. Navigate to **Logs** tab
+    3. Filter by:
+       - Time range
+       - Function name
+       - Log level (info, warn, error)
+       - Status code
+    4. Click on individual requests for detailed traces
+  </Tab>
+  
+  <Tab title="CLI">
+    ```bash
+    # Tail production logs
+    vercel logs --follow
+    
+    # Filter by deployment
+    vercel logs [deployment-url]
+    
+    # Show errors only
+    vercel logs --filter error
+    
+    # Specific timeframe
+    vercel logs --since 1h
+    vercel logs --since "2024-01-01 00:00:00"
+    ```
+  </Tab>
+  
+  <Tab title="API">
+    ```typescript
+    // Fetch logs programmatically
+    const response = await fetch(
+      `https://api.vercel.com/v2/deployments/${deploymentId}/events`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.VERCEL_TOKEN}`
+        }
+      }
+    );
+    
+    const logs = await response.json();
+    ```
+  </Tab>
+</Tabs>
+
+### Log Retention
+
+<Note>
+  **Vercel Log Retention**:
+  - **Hobby**: 1 hour
+  - **Pro**: 1 day
+  - **Enterprise**: Custom retention
+  
+  For longer retention, integrate with external logging services.
+</Note>
+
+## Error Tracking
+
+### Sentry Integration
+
+Integrate Sentry for comprehensive error tracking:
+
+<Steps>
+  <Step title="Install Sentry">
+    ```bash
+    npm install @sentry/nextjs
+    ```
+  </Step>
+  
+  <Step title="Configure Sentry">
+    ```typescript sentry.client.config.ts
+    import * as Sentry from "@sentry/nextjs";
+    
+    Sentry.init({
+      dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+      
+      // Set tracesSampleRate to 1.0 to capture 100%
+      tracesSampleRate: 1.0,
+      
+      // Capture Replay for session analysis
+      replaysSessionSampleRate: 0.1,
+      replaysOnErrorSampleRate: 1.0,
+      
+      // Filter sensitive data
+      beforeSend(event, hint) {
+        // Remove sensitive user data
+        if (event.user) {
+          delete event.user.email;
+          delete event.user.ip_address;
+        }
+        return event;
+      },
+      
+      // Environment detection
+      environment: process.env.VERCEL_ENV || 'development',
+    });
+    ```
+    
+    ```typescript sentry.server.config.ts
+    import * as Sentry from "@sentry/nextjs";
+    
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      tracesSampleRate: 1.0,
+      environment: process.env.VERCEL_ENV || 'development',
+    });
+    ```
+  </Step>
+  
+  <Step title="Add to API Routes">
+    ```typescript app/api/cases/open/route.ts
+    import * as Sentry from '@sentry/nextjs';
+    
+    export async function POST(request: Request) {
+      try {
+        // ... case opening logic ...
+      } catch (error) {
+        Sentry.captureException(error, {
+          tags: {
+            api_route: 'case_open',
+            case_id: caseId
+          },
+          user: {
+            id: user.id,
+            username: user.username
+          },
+          extra: {
+            casePrice: box.price,
+            userBalance: userBalance
+          }
+        });
+        
+        throw error;
+      }
+    }
+    ```
+  </Step>
+  
+  <Step title="Configure Vercel Integration">
+    Add Sentry environment variables:
+    ```bash
+    vercel env add NEXT_PUBLIC_SENTRY_DSN production
+    vercel env add SENTRY_DSN production
+    vercel env add SENTRY_AUTH_TOKEN production
+    ```
+  </Step>
+</Steps>
+
+### Error Boundaries
+
+Implement React error boundaries for client-side errors:
+
+```typescript components/error-boundary.tsx
+'use client';
+
+import * as Sentry from '@sentry/nextjs';
+import { useEffect } from 'react';
+
+export default function ErrorBoundary({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  useEffect(() => {
+    // Log to Sentry
+    Sentry.captureException(error);
+  }, [error]);
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen">
+      <h2 className="text-2xl font-bold mb-4">Something went wrong!</h2>
+      <p className="text-gray-600 mb-4">{error.message}</p>
+      <button
+        onClick={reset}
+        className="px-4 py-2 bg-primary text-white rounded"
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+```
+
+## Performance Monitoring
+
+### Vercel Analytics
+
+Enable Vercel Analytics for real user monitoring:
+
+<Steps>
+  <Step title="Enable Analytics">
+    1. Go to your project on Vercel
+    2. Navigate to **Analytics** tab
+    3. Click **Enable Analytics**
+  </Step>
+  
+  <Step title="Add to Application">
+    ```typescript app/layout.tsx
+    import { Analytics } from '@vercel/analytics/react';
+    
+    export default function RootLayout({ children }) {
+      return (
+        <html>
+          <body>
+            {children}
+            <Analytics />
+          </body>
+        </html>
+      );
+    }
+    ```
+  </Step>
+  
+  <Step title="Track Custom Events">
+    ```typescript
+    import { track } from '@vercel/analytics';
+    
+    // Track case opening
+    track('case_opened', {
+      caseId: box.id,
+      caseName: box.name,
+      price: box.price,
+      itemWon: winner.name,
+      itemValue: winner.price
+    });
+    
+    // Track user actions
+    track('deposit', { amount: depositAmount });
+    track('withdrawal', { amount: withdrawAmount });
+    ```
+  </Step>
+</Steps>
+
+### Web Vitals Monitoring
+
+Monitor Core Web Vitals for performance insights:
+
+```typescript app/layout.tsx
+import { SpeedInsights } from '@vercel/speed-insights/next';
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        {children}
+        <SpeedInsights />
+      </body>
+    </html>
+  );
+}
+```
+
+<Info>
+  **Core Web Vitals Tracked**:
+  - **LCP** (Largest Contentful Paint): Loading performance
+  - **FID** (First Input Delay): Interactivity
+  - **CLS** (Cumulative Layout Shift): Visual stability
+  - **TTFB** (Time to First Byte): Server response time
+</Info>
+
+### API Performance
+
+Monitor API route performance:
+
+```typescript app/api/cases/open/route.ts
+export async function POST(request: Request) {
+  const startTime = performance.now();
+  
+  try {
+    // ... case opening logic ...
+    
+    const duration = performance.now() - startTime;
+    
+    // Log slow requests
+    if (duration > 1000) {
+      console.warn('Slow API request', {
+        route: '/api/cases/open',
+        duration,
+        caseId
+      });
+    }
+    
+    // Add timing header
+    return NextResponse.json(data, {
+      headers: {
+        'Server-Timing': `total;dur=${duration}`
+      }
+    });
+    
+  } catch (error) {
+    const duration = performance.now() - startTime;
+    console.error('API error', { duration, error });
+    throw error;
+  }
+}
+```
+
+## Database Monitoring
+
+### Supabase Logs
+
+Access database query logs in Supabase:
+
+<Tabs>
+  <Tab title="Dashboard">
+    1. Open your Supabase project
+    2. Navigate to **Logs** section
+    3. View:
+       - **Postgres Logs**: Query execution
+       - **API Logs**: REST/GraphQL requests
+       - **Auth Logs**: Authentication events
+       - **Realtime Logs**: WebSocket connections
+  </Tab>
+  
+  <Tab title="Query Performance">
+    Monitor slow queries:
+    ```sql
+    -- Enable pg_stat_statements
+    CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+    
+    -- View slow queries
+    SELECT
+      query,
+      calls,
+      mean_exec_time,
+      max_exec_time,
+      stddev_exec_time
+    FROM pg_stat_statements
+    WHERE mean_exec_time > 100  -- queries taking >100ms
+    ORDER BY mean_exec_time DESC
+    LIMIT 20;
+    ```
+  </Tab>
+  
+  <Tab title="Connection Pooling">
+    Monitor database connections:
+    ```sql
+    -- Active connections
+    SELECT
+      count(*) as total_connections,
+      state,
+      application_name
+    FROM pg_stat_activity
+    GROUP BY state, application_name;
+    
+    -- Long-running queries
+    SELECT
+      pid,
+      now() - query_start as duration,
+      query,
+      state
+    FROM pg_stat_activity
+    WHERE state != 'idle'
+    ORDER BY duration DESC;
+    ```
+  </Tab>
+</Tabs>
+
+### Query Optimization
+
+Optimize database queries for performance:
+
+<AccordionGroup>
+  <Accordion title="Add Indexes" icon="bolt">
+    ```sql
+    -- Index for user lookups
+    CREATE INDEX idx_users_username ON users(username);
+    
+    -- Index for case items
+    CREATE INDEX idx_case_items_case_id ON case_items(case_id);
+    
+    -- Index for user inventory
+    CREATE INDEX idx_user_items_user_id ON user_items(user_id);
+    CREATE INDEX idx_user_items_status ON user_items(status);
+    
+    -- Composite index for transactions
+    CREATE INDEX idx_transactions_user_date 
+      ON transactions(user_id, created_at DESC);
+    ```
+  </Accordion>
+  
+  <Accordion title="Use Explain Analyze" icon="magnifying-glass">
+    Analyze query performance:
+    ```sql
+    EXPLAIN ANALYZE
+    SELECT ci.*, i.*
+    FROM case_items ci
+    JOIN items i ON ci.item_id = i.id
+    WHERE ci.case_id = 'abc-123';
+    
+    -- Look for:
+    -- - Sequential scans (add indexes)
+    -- - High execution time
+    -- - Nested loops (consider joins)
+    ```
+  </Accordion>
+  
+  <Accordion title="Batch Operations" icon="layer-group">
+    Reduce round trips with batch operations:
+    ```typescript
+    // Instead of multiple inserts
+    for (const item of items) {
+      await supabase.from('user_items').insert(item);
+    }
+    
+    // Use single batch insert
+    await supabase.from('user_items').insert(items);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Database Metrics
+
+Monitor key database metrics:
+
+<CardGroup cols={2}>
+  <Card title="Connection Pool" icon="plug">
+    **Healthy Range**: 10-50 connections
+    
+    **Alerts**:
+    - > 80% capacity: Scale up
+    - Connection timeouts: Add pooling
+  </Card>
+  
+  <Card title="Query Performance" icon="gauge">
+    **Target**: < 100ms average
+    
+    **Alerts**:
+    - > 500ms: Investigate slow queries
+    - > 1000ms: Immediate optimization needed
+  </Card>
+  
+  <Card title="Storage Usage" icon="database">
+    **Monitor**: Table sizes and growth
+    
+    **Maintenance**:
+    - Archive old transactions
+    - Vacuum tables regularly
+  </Card>
+  
+  <Card title="RLS Performance" icon="shield">
+    **Check**: Policy execution time
+    
+    **Optimize**:
+    - Simplify complex policies
+    - Add indexes on policy columns
+  </Card>
+</CardGroup>
+
+## Alerting
+
+### Vercel Alerts
+
+Configure alerts for production issues:
+
+<Steps>
+  <Step title="Deployment Alerts">
+    1. Go to **Settings** → **Notifications**
+    2. Enable:
+       - Deployment started
+       - Deployment failed
+       - Deployment ready
+  </Step>
+  
+  <Step title="Error Alerts">
+    Configure error rate thresholds:
+    - Error rate > 1%
+    - 5xx responses > 0.1%
+    - Function timeout > 5%
+  </Step>
+  
+  <Step title="Integration Channels">
+    Send alerts to:
+    - Email
+    - Slack
+    - Discord
+    - Webhooks
+  </Step>
+</Steps>
+
+### Sentry Alerts
+
+Set up Sentry alerts for critical errors:
+
+```yaml .sentryclirc
+alerts:
+  - type: error_rate
+    threshold: 10  # errors per minute
+    window: 5      # minutes
+    actions:
+      - email
+      - slack
+  
+  - type: new_issue
+    filters:
+      level: error
+    actions:
+      - slack
+  
+  - type: regression
+    filters:
+      is_unresolved: true
+    actions:
+      - email
+      - slack
+```
+
+### Custom Health Checks
+
+Implement custom health monitoring:
+
+```typescript app/api/health/route.ts
+export async function GET() {
+  const checks = await Promise.allSettled([
+    checkDatabase(),
+    checkSupabase(),
+    checkExternalAPIs()
+  ]);
+  
+  const status = checks.every(c => c.status === 'fulfilled') 
+    ? 'healthy' 
+    : 'unhealthy';
+  
+  return NextResponse.json({
+    status,
+    timestamp: new Date().toISOString(),
+    checks: {
+      database: checks[0].status === 'fulfilled',
+      supabase: checks[1].status === 'fulfilled',
+      external_apis: checks[2].status === 'fulfilled'
+    }
+  }, {
+    status: status === 'healthy' ? 200 : 503
+  });
+}
+
+async function checkDatabase() {
+  const supabase = await createClient();
+  const { error } = await supabase.from('cases').select('count').single();
+  if (error) throw error;
+}
+
+async function checkSupabase() {
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/`,
+    {
+      headers: {
+        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      }
+    }
+  );
+  if (!response.ok) throw new Error('Supabase unreachable');
+}
+```
+
+<Info>
+  Monitor the `/api/health` endpoint with an external service like [UptimeRobot](https://uptimerobot.com/) or [Pingdom](https://www.pingdom.com/).
+</Info>
+
+## Dashboard Setup
+
+### Vercel Analytics Dashboard
+
+Key metrics to monitor:
+
+<CardGroup cols={2}>
+  <Card title="Traffic" icon="chart-line">
+    - Total requests
+    - Unique visitors
+    - Page views
+    - Geographic distribution
+  </Card>
+  
+  <Card title="Performance" icon="gauge-high">
+    - Average response time
+    - 95th percentile latency
+    - Core Web Vitals
+    - Function execution time
+  </Card>
+  
+  <Card title="Errors" icon="triangle-exclamation">
+    - Error rate
+    - 4xx responses
+    - 5xx responses
+    - Failed functions
+  </Card>
+  
+  <Card title="Business Metrics" icon="dollar">
+    - Cases opened
+    - Revenue
+    - User signups
+    - Conversion rate
+  </Card>
+</CardGroup>
+
+### Custom Dashboard
+
+Build a custom monitoring dashboard:
+
+```typescript app/admin/monitoring/page.tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+
+export default function MonitoringDashboard() {
+  const [metrics, setMetrics] = useState(null);
+  
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      const response = await fetch('/api/admin/metrics');
+      const data = await response.json();
+      setMetrics(data);
+    };
+    
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 30000); // 30s
+    
+    return () => clearInterval(interval);
+  }, []);
+  
+  return (
+    <div className="p-8">
+      <h1 className="text-3xl font-bold mb-8">System Monitoring</h1>
+      
+      <div className="grid grid-cols-4 gap-4">
+        <MetricCard
+          title="Active Users"
+          value={metrics?.activeUsers}
+          change={metrics?.activeUsersChange}
+        />
+        <MetricCard
+          title="Error Rate"
+          value={`${metrics?.errorRate}%`}
+          alert={metrics?.errorRate > 1}
+        />
+        <MetricCard
+          title="Avg Response"
+          value={`${metrics?.avgResponse}ms`}
+          alert={metrics?.avgResponse > 500}
+        />
+        <MetricCard
+          title="DB Connections"
+          value={metrics?.dbConnections}
+          alert={metrics?.dbConnections > 80}
+        />
+      </div>
+    </div>
+  );
+}
+```
+
+## Monitoring Checklist
+
+<Steps>
+  <Step title="Logging">
+    - [ ] Structured logging implemented
+    - [ ] Log levels configured correctly
+    - [ ] Sensitive data filtered from logs
+    - [ ] Log retention policy defined
+  </Step>
+  
+  <Step title="Error Tracking">
+    - [ ] Sentry integrated
+    - [ ] Error boundaries implemented
+    - [ ] Source maps uploaded
+    - [ ] Alert rules configured
+  </Step>
+  
+  <Step title="Performance">
+    - [ ] Vercel Analytics enabled
+    - [ ] Speed Insights integrated
+    - [ ] Custom events tracked
+    - [ ] Performance budgets set
+  </Step>
+  
+  <Step title="Database">
+    - [ ] Query logs enabled
+    - [ ] Slow query alerts set
+    - [ ] Indexes optimized
+    - [ ] Connection pooling configured
+  </Step>
+  
+  <Step title="Alerting">
+    - [ ] Critical alerts configured
+    - [ ] On-call rotation established
+    - [ ] Runbooks documented
+    - [ ] Escalation paths defined
+  </Step>
+</Steps>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Log Thoughtfully" icon="pen">
+    - Use structured logging (JSON)
+    - Include request IDs for tracing
+    - Log at appropriate levels (info, warn, error)
+    - Avoid logging sensitive data (passwords, tokens)
+    - Include context (user ID, resource IDs)
+  </Accordion>
+  
+  <Accordion title="Monitor User Experience" icon="user">
+    - Track Core Web Vitals
+    - Monitor conversion funnels
+    - Identify slow pages
+    - Measure feature adoption
+    - Collect user feedback
+  </Accordion>
+  
+  <Accordion title="Set Meaningful Alerts" icon="bell">
+    - Avoid alert fatigue (be selective)
+    - Set actionable thresholds
+    - Include context in alerts
+    - Test alert channels regularly
+    - Document response procedures
+  </Accordion>
+  
+  <Accordion title="Review Regularly" icon="calendar">
+    - Weekly metrics review
+    - Monthly performance audit
+    - Quarterly capacity planning
+    - Annual security review
+  </Accordion>
+</AccordionGroup>
+
+<Check>
+  **Well-Monitored System**: With comprehensive monitoring in place, you can detect issues before they impact users, optimize performance continuously, and make data-driven decisions.
+</Check>
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="Vercel Observability" icon="chart-mixed" href="https://vercel.com/docs/observability">
+    Official Vercel monitoring docs
+  </Card>
+  
+  <Card title="Sentry Docs" icon="book" href="https://docs.sentry.io/platforms/javascript/guides/nextjs/">
+    Next.js Sentry integration
+  </Card>
+  
+  <Card title="Supabase Logs" icon="database" href="https://supabase.com/docs/guides/platform/logs">
+    Database monitoring guide
+  </Card>
+  
+  <Card title="Security Monitoring" icon="shield" href="/deployment/security">
+    Security best practices
+  </Card>
+</CardGroup>

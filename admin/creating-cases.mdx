@@ -1,0 +1,408 @@
+---
+title: Creating Cases
+description: Step-by-step guide to creating new cases, setting prices, and configuring items in the Cajas admin panel
+---
+
+## Overview
+
+Creating a case involves defining the case properties (name, price, image) and configuring the items that can be won from the case along with their drop probabilities.
+
+## Prerequisites
+
+- Admin role assigned to your account
+- Access to the admin panel at `/admin/create-case`
+- Item images hosted and accessible via URLs
+
+## Case Creation Form
+
+The case creation interface is located at:
+
+```
+/app/admin/create-case
+```
+
+Reference: `/home/daytona/workspace/source/app/admin/create-case/page.tsx`
+
+## Step-by-Step Guide
+
+### Step 1: Access the Create Case Page
+
+Navigate to the admin panel and select "Create New Case" or visit `/admin/create-case` directly.
+
+The page will verify your admin status:
+
+```typescript
+const { data: profile } = await supabase
+  .from('profiles')
+  .select('role')
+  .eq('id', user.id)
+  .single()
+
+if (profile?.role !== 'admin') {
+  redirect('/')  // Redirect non-admins
+}
+```
+
+### Step 2: Fill Case Details
+
+#### Case Name
+- **Required**: Yes
+- **Validation**: Minimum 1 character
+- **Note**: Will be used to generate a URL-friendly slug
+
+```typescript
+name: z.string().min(1, 'Nombre requerido')
+```
+
+#### Price
+- **Required**: Yes
+- **Type**: Number (decimal supported)
+- **Validation**: Must be positive (≥ 0)
+- **Format**: Use dollars/currency units (e.g., 9.99)
+
+```typescript
+price: z.number().min(0, 'Precio debe ser positivo')
+```
+
+#### Description
+- **Required**: No
+- **Type**: Text (supports multiple lines)
+- **Use**: Provide context about the case theme or contents
+
+```typescript
+description: z.string().optional()
+```
+
+#### Image URL
+- **Required**: Yes
+- **Validation**: Must be a valid URL
+- **Format**: `https://example.com/image.png`
+- **Recommended**: Use a CDN or image hosting service
+
+```typescript
+image_url: z.string().url('URL inválida')
+```
+
+Reference: `/home/daytona/workspace/source/components/admin/create-case-form.tsx:19-23`
+
+### Step 3: Configure Case Items
+
+Each case must have between 2-15 items.
+
+#### Item Properties
+
+For each item, configure:
+
+**Name**
+- Item display name
+- Required, minimum 1 character
+
+**Value**
+- Item worth in currency units
+- Must be ≥ 0
+- Affects rarity perception
+
+**Image URL**
+- Valid URL to item image
+- Should be square format for best display
+
+**Probability (%)**
+- Drop chance percentage
+- Must be between 0-100
+- **Important**: Total of all item probabilities must equal exactly 100%
+
+```typescript
+const itemSchema = z.object({
+  name: z.string().min(1, 'Nombre requerido'),
+  value: z.number().min(0, 'Valor debe ser positivo'),
+  image_url: z.string().url('URL inválida'),
+  probability: z.number().min(0).max(100),
+})
+```
+
+Reference: `/home/daytona/workspace/source/components/admin/create-case-form.tsx:12-17`
+
+#### Adding/Removing Items
+
+**Add Item**: Click the "Agregar Ítem" button at the bottom of the items list
+
+```typescript
+<button
+  type="button"
+  onClick={() => append({ name: '', value: 0, image_url: '', probability: 0 })}
+  disabled={fields.length >= 15}
+>
+  <Plus className="w-4 h-4" />
+  Agregar Ítem
+</button>
+```
+
+**Remove Item**: Click the trash icon next to an item
+- Minimum 2 items must remain
+
+Reference: `/home/daytona/workspace/source/components/admin/create-case-form.tsx:224-232`
+
+### Step 4: Validate Probabilities
+
+The form shows a real-time probability total:
+
+```typescript
+const totalProbability = items.reduce(
+  (sum, item) => sum + (Number(item.probability) || 0), 
+  0
+)
+const isProbabilityValid = Math.abs(totalProbability - 100) < 0.01
+```
+
+- **Green indicator**: Probabilities sum to 100% ✓
+- **Red indicator**: Probabilities don't sum to 100% ✗
+
+The submit button will be disabled until probabilities are valid.
+
+Reference: `/home/daytona/workspace/source/components/admin/create-case-form.tsx:69-71`
+
+### Step 5: Submit the Form
+
+Once all validations pass, click "Crear Caja" to submit.
+
+#### What Happens During Submission
+
+1. **Client-side validation** using Zod schema
+2. **Server action** receives the form data
+3. **Admin role verification**
+4. **Slug generation** from case name:
+   ```typescript
+   const slug = name.toLowerCase()
+     .replace(/[^a-z0-9]+/g, '-')
+     .replace(/(^-|-$)+/g, '')
+   ```
+5. **Database transaction**:
+   - Insert case into `cases` table
+   - Insert all items into `case_items` table
+   - If items fail, rollback case insertion
+6. **Audit log creation**:
+   ```typescript
+   await supabase.from('admin_logs').insert({
+     admin_id: user.id,
+     action: 'CREATE_CASE',
+     details: { case_id: newCase.id, name: newCase.name },
+   })
+   ```
+7. **Cache revalidation** for `/cases` route
+
+Reference: `/home/daytona/workspace/source/app/actions/create-case.ts:34-136`
+
+## Database Schema
+
+### Cases Table
+
+```typescript
+interface Case {
+  id: string
+  name: string
+  slug: string              // Auto-generated from name
+  description: string | null
+  price: number
+  image_url: string
+  created_at: string
+}
+```
+
+Reference: `/home/daytona/workspace/source/types/supabase.ts:44-72`
+
+### Case Items Table
+
+```typescript
+interface CaseItem {
+  id: string
+  case_id: string          // Foreign key to cases
+  name: string
+  value: number
+  image_url: string
+  probability: number      // 0-100
+  created_at: string
+}
+```
+
+Reference: `/home/daytona/workspace/source/types/supabase.ts:73-101`
+
+## Validation Rules
+
+The create case action enforces these rules:
+
+```typescript
+const caseSchema = z.object({
+  name: z.string().min(1, 'Case name is required'),
+  description: z.string().optional(),
+  price: z.number().min(0, 'Price must be positive'),
+  image_url: z.string().url('Invalid image URL'),
+  items: z.array(itemSchema)
+    .min(2, 'Case must have at least 2 items')
+    .max(15, 'Case must have at most 15 items')
+    .refine((items) => {
+      const total = items.reduce((sum, item) => sum + item.probability, 0)
+      return Math.abs(total - 100) < 0.01
+    }, 'Total probability must be exactly 100%'),
+})
+```
+
+Reference: `/home/daytona/workspace/source/app/actions/create-case.ts:14-26`
+
+## Error Handling
+
+### Duplicate Case Name
+
+If a case with the same slug already exists:
+
+```typescript
+if (caseError.code === '23505') {
+  return { 
+    error: 'Ya existe una caja con este nombre. Por favor, elige otro.' 
+  }
+}
+```
+
+Reference: `/home/daytona/workspace/source/app/actions/create-case.ts:102-104`
+
+### Transaction Rollback
+
+If items fail to insert, the case is automatically deleted:
+
+```typescript
+if (itemsError) {
+  // Rollback: Delete the created case
+  await supabase.from('cases').delete().eq('id', newCase.id)
+  return { error: `Failed to create items: ${itemsError.message}` }
+}
+```
+
+Reference: `/home/daytona/workspace/source/app/actions/create-case.ts:121-125`
+
+## Best Practices
+
+### Probability Distribution
+
+1. **Common items**: 50-70% total
+2. **Rare items**: 20-30% total
+3. **Legendary items**: 1-10% total
+
+Example distribution for a 5-item case:
+
+```typescript
+const exampleItems = [
+  { name: 'Common Item 1', value: 1.00, probability: 35 },
+  { name: 'Common Item 2', value: 1.50, probability: 30 },
+  { name: 'Rare Item', value: 5.00, probability: 20 },
+  { name: 'Epic Item', value: 10.00, probability: 10 },
+  { name: 'Legendary Item', value: 50.00, probability: 5 },
+]
+```
+
+### Pricing Strategy
+
+1. **Calculate expected value**:
+   ```typescript
+   const expectedValue = items.reduce(
+     (sum, item) => sum + (item.value * item.probability / 100),
+     0
+   )
+   ```
+
+2. **Set price slightly above expected value** for sustainability
+
+3. **Consider player psychology**: Round numbers (9.99, 19.99) perform better
+
+### Image Guidelines
+
+1. **Format**: PNG or WebP for transparency
+2. **Dimensions**: Square (512x512 or 1024x1024)
+3. **Optimization**: Compress images to reduce load times
+4. **CDN**: Use a CDN for better performance
+5. **Backup**: Keep source images in case URLs change
+
+## Common Issues
+
+### Probabilities Don't Sum to 100%
+
+**Problem**: Submit button disabled, red indicator shows.
+
+**Solution**: Adjust item probabilities. The form requires exact 100% (within 0.01 tolerance).
+
+```typescript
+// Check current total
+const total = items.reduce((sum, item) => sum + item.probability, 0)
+console.log(total)  // Should be 100.00
+```
+
+### Invalid Image URL
+
+**Problem**: Form validation fails with "URL inválida".
+
+**Solution**: Ensure URLs:
+- Start with `http://` or `https://`
+- Point to actual image files
+- Are publicly accessible
+
+### Duplicate Slug Error
+
+**Problem**: Error message about existing case name.
+
+**Solution**: 
+- Choose a different case name
+- The slug is auto-generated from the name
+- Names like "Dragon Lore" become "dragon-lore"
+
+## Example: Complete Case Creation
+
+```typescript
+// Case details
+const caseData = {
+  name: "Legendary Weapon Case",
+  description: "Unbox rare weapons and skins",
+  price: 14.99,
+  image_url: "https://cdn.example.com/legendary-case.png",
+  items: [
+    {
+      name: "AK-47 | Redline",
+      value: 8.00,
+      image_url: "https://cdn.example.com/ak47-redline.png",
+      probability: 45
+    },
+    {
+      name: "M4A4 | Asiimov",
+      value: 12.00,
+      image_url: "https://cdn.example.com/m4a4-asiimov.png",
+      probability: 30
+    },
+    {
+      name: "AWP | Dragon Lore",
+      value: 100.00,
+      image_url: "https://cdn.example.com/awp-dragonlore.png",
+      probability: 5
+    },
+    {
+      name: "Knife | Karambit Fade",
+      value: 500.00,
+      image_url: "https://cdn.example.com/karambit-fade.png",
+      probability: 1
+    },
+    {
+      name: "Glock-18 | Water Elemental",
+      value: 5.00,
+      image_url: "https://cdn.example.com/glock-water.png",
+      probability: 19
+    }
+  ]
+}
+
+// Total probability: 45 + 30 + 5 + 1 + 19 = 100% ✓
+// Expected value: (8*0.45) + (12*0.30) + (100*0.05) + (500*0.01) + (5*0.19)
+//               = 3.6 + 3.6 + 5.0 + 5.0 + 0.95 = $18.15
+// Price: $14.99 (good value for players)
+```
+
+## Next Steps
+
+- [Managing Items](/admin/managing-items) - Learn how to update and manage case items
+- [Monitoring](/admin/monitoring) - Track case creation in audit logs
+- [Admin Overview](/admin/overview) - Learn about roles and permissions

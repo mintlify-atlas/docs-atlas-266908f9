@@ -1,0 +1,481 @@
+---
+title: 'Database Migrations'
+description: 'Run and manage database migrations for the Cajas application'
+---
+
+## Overview
+
+Cajas uses SQL migrations to set up and modify the database schema. All migrations are located in the `supabase/migrations/` directory and are executed sequentially by filename.
+
+## Migration Files
+
+The application includes the following migrations:
+
+| Migration File | Purpose | Tables Created |
+|----------------|---------|----------------|
+| `20240101000000_init.sql` | Initial schema setup | `users`, `cases`, `items`, `case_items`, `user_items`, `transactions`, `provably_fair_games` |
+| `20240101000001_seed.sql` | Seed data for development | Inserts sample items and cases |
+| `0000_create_cases_system.sql` | Enhanced case system | Adds `admin_logs`, RLS policies |
+| `20251205120000_fix_case_items_schema.sql` | Schema correction | Rebuilds `case_items` table |
+| `20251205121000_remove_seed_cases.sql` | Cleanup | Removes seed cases |
+| `20251209000000_create_provably_fair.sql` | Provably fair system | `user_seeds`, `game_rolls` |
+
+## Running Migrations
+
+<Steps>
+  <Step title="Method 1: Using Supabase Dashboard (Recommended)">
+    The easiest way to run migrations is through the Supabase Dashboard:
+
+    1. Go to [Supabase Dashboard](https://app.supabase.com)
+    2. Select your project
+    3. Navigate to **SQL Editor**
+    4. Create a new query
+    5. Copy and paste the contents of each migration file in order
+    6. Click **Run** to execute
+
+    <Info>
+    Run migrations in alphabetical order by filename. The timestamp prefix ensures correct ordering.
+    </Info>
+  </Step>
+
+  <Step title="Method 2: Using Supabase CLI">
+    For a more automated approach, use the Supabase CLI:
+
+    ```bash
+    # Install Supabase CLI
+    npm install -g supabase
+
+    # Link to your remote project
+    supabase link --project-ref your-project-ref
+
+    # Push migrations
+    supabase db push
+    ```
+
+    <Tip>
+    Find your project ref in the Supabase Dashboard under Settings > General > Project ID
+    </Tip>
+  </Step>
+
+  <Step title="Method 3: Direct Database Connection">
+    For advanced users, connect directly to PostgreSQL:
+
+    ```bash
+    # Using psql
+    psql "postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres"
+
+    # Run migration file
+    \i supabase/migrations/20240101000000_init.sql
+    ```
+
+    <Warning>
+    Direct database connections should only be used by experienced PostgreSQL users. Always test in a development environment first.
+    </Warning>
+  </Step>
+</Steps>
+
+## Migration Details
+
+### Initial Setup (`20240101000000_init.sql`)
+
+Creates the core database schema for the application.
+
+**Key Features**:
+- Enables UUID extension for unique identifiers
+- Creates public user profiles linked to `auth.users`
+- Sets up case and item management tables
+- Configures Row Level Security (RLS) on all tables
+- Implements automatic user profile creation trigger
+
+**User Profile Creation** (`supabase/migrations/20240101000000_init.sql:130-140`):
+```sql
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.users (id, username, avatar_url)
+  values (new.id, new.raw_user_meta_data ->> 'full_name', 
+          new.raw_user_meta_data ->> 'avatar_url');
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+```
+
+This trigger automatically creates a profile in `public.users` whenever a new user signs up.
+
+### Case Items Schema Fix (`20251205120000_fix_case_items_schema.sql`)
+
+Rebuilds the `case_items` table to match application requirements.
+
+**Changes** (`supabase/migrations/20251205120000_fix_case_items_schema.sql:1-14`):
+```sql
+-- Drop the existing table with incorrect columns
+DROP TABLE IF EXISTS case_items;
+
+-- Recreate with correct schema
+CREATE TABLE case_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id uuid REFERENCES cases(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  value numeric NOT NULL CHECK (value >= 0),
+  image_url text NOT NULL,
+  probability numeric NOT NULL CHECK (probability >= 0 AND probability <= 100),
+  created_at timestamptz DEFAULT now()
+);
+```
+
+<Warning>
+This migration drops the existing `case_items` table. All data in this table will be lost. Run this only on fresh installations or ensure you have backups.
+</Warning>
+
+### Provably Fair System (`20251209000000_create_provably_fair.sql`)
+
+Implements cryptographic fairness for game outcomes.
+
+**Tables Created**:
+
+1. **`user_seeds`** - Stores per-user seeds for provably fair gaming
+   ```sql
+   create table public.user_seeds (
+     user_id uuid references auth.users not null primary key,
+     server_seed text not null,
+     client_seed text not null,
+     nonce bigint not null default 0,
+     created_at timestamp with time zone default timezone('utc'::text, now()),
+     updated_at timestamp with time zone default timezone('utc'::text, now())
+   );
+   ```
+
+2. **`game_rolls`** - Audit log for all game outcomes
+   ```sql
+   create table public.game_rolls (
+     id uuid default gen_random_uuid() primary key,
+     user_id uuid references auth.users not null,
+     case_id uuid references public.cases not null,
+     server_seed text not null,
+     client_seed text not null,
+     nonce bigint not null,
+     roll_result bigint not null,
+     item_won_id uuid references public.items not null,
+     created_at timestamp with time zone default timezone('utc'::text, now())
+   );
+   ```
+
+From `supabase/migrations/20251209000000_create_provably_fair.sql:2-38`.
+
+## Understanding Row Level Security
+
+All tables use RLS to enforce access control at the database level.
+
+### Public Read Policies
+
+Anyone can view cases and items:
+
+```sql
+CREATE POLICY "Cases are viewable by everyone."
+  ON public.cases FOR SELECT
+  USING ( true );
+
+CREATE POLICY "Public read case_items" 
+  ON case_items FOR SELECT 
+  USING (true);
+```
+
+### User-Specific Policies
+
+Users can only access their own data:
+
+```sql
+CREATE POLICY "Users can view their own seeds"
+  ON public.user_seeds FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own seeds"
+  ON public.user_seeds FOR UPDATE
+  USING (auth.uid() = user_id);
+```
+
+From `supabase/migrations/20251209000000_create_provably_fair.sql:15-21`.
+
+### Admin-Only Policies
+
+Only users with `role = 'admin'` can manage cases:
+
+```sql
+CREATE POLICY "Admins insert cases" 
+  ON cases FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+
+CREATE POLICY "Admins update cases" 
+  ON cases FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+
+CREATE POLICY "Admins delete cases" 
+  ON cases FOR DELETE USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+```
+
+From `supabase/migrations/0000_create_cases_system.sql:42-50`.
+
+## Verifying Migrations
+
+<Steps>
+  <Step title="Check Tables Exist">
+    Run this query in the SQL Editor to verify all tables:
+
+    ```sql
+    SELECT table_name 
+    FROM information_schema.tables 
+    WHERE table_schema = 'public' 
+    ORDER BY table_name;
+    ```
+
+    You should see:
+    - `admin_logs`
+    - `case_items`
+    - `cases`
+    - `game_rolls`
+    - `items`
+    - `transactions`
+    - `user_items`
+    - `user_seeds`
+    - `users`
+  </Step>
+
+  <Step title="Verify RLS is Enabled">
+    Check that RLS is enabled on all tables:
+
+    ```sql
+    SELECT tablename, rowsecurity 
+    FROM pg_tables 
+    WHERE schemaname = 'public';
+    ```
+
+    All tables should show `rowsecurity = true`.
+  </Step>
+
+  <Step title="Test Policies">
+    View all policies for a table:
+
+    ```sql
+    SELECT * FROM pg_policies 
+    WHERE tablename = 'cases';
+    ```
+
+    Verify that expected policies exist (public read, admin write).
+  </Step>
+
+  <Step title="Check Functions and Triggers">
+    Verify the user creation trigger exists:
+
+    ```sql
+    SELECT trigger_name, event_manipulation, event_object_table 
+    FROM information_schema.triggers 
+    WHERE trigger_schema = 'public';
+    ```
+
+    You should see `on_auth_user_created` trigger on `auth.users`.
+  </Step>
+</Steps>
+
+## Creating New Migrations
+
+When you need to modify the schema:
+
+<Steps>
+  <Step title="Create Migration File">
+    Use a timestamp prefix for ordering:
+
+    ```bash
+    touch supabase/migrations/$(date +%Y%m%d%H%M%S)_your_migration_name.sql
+    ```
+
+    Example: `20260304120000_add_user_preferences.sql`
+  </Step>
+
+  <Step title="Write Migration SQL">
+    Always use safe SQL patterns:
+
+    ```sql
+    -- Use IF NOT EXISTS for safety
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid REFERENCES users(id) ON DELETE CASCADE,
+      theme text DEFAULT 'dark',
+      created_at timestamptz DEFAULT now()
+    );
+
+    -- Enable RLS
+    ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
+
+    -- Create policies
+    CREATE POLICY "Users manage own preferences"
+      ON user_preferences
+      USING (auth.uid() = user_id)
+      WITH CHECK (auth.uid() = user_id);
+    ```
+  </Step>
+
+  <Step title="Test Migration">
+    Always test migrations on a development database first:
+
+    ```bash
+    # Test locally with Supabase CLI
+    supabase db reset
+    supabase db push
+    ```
+  </Step>
+
+  <Step title="Document Changes">
+    Update type definitions after schema changes:
+
+    ```bash
+    # Generate TypeScript types
+    supabase gen types typescript --local > types/supabase.ts
+    ```
+
+    The types are already defined in `types/supabase.ts`.
+  </Step>
+</Steps>
+
+## Rollback and Recovery
+
+<AccordionGroup>
+  <Accordion title="Rollback a migration">
+    Supabase doesn't have automatic rollback. Create a new migration to undo changes:
+
+    ```sql
+    -- Rollback example
+    DROP TABLE IF EXISTS table_to_remove;
+    
+    -- Or restore previous schema
+    ALTER TABLE users DROP COLUMN IF EXISTS new_column;
+    ```
+
+    <Tip>
+    Always create up and down migrations for complex changes.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="Restore from backup">
+    Supabase automatically creates daily backups on paid plans:
+
+    1. Go to **Database > Backups**
+    2. Select a backup point
+    3. Click **Restore**
+
+    <Warning>
+    Free tier projects don't have automatic backups. Export data regularly for safety.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Export current schema">
+    Save your current schema for reference:
+
+    ```bash
+    # Using Supabase CLI
+    supabase db dump --schema public > schema_backup.sql
+    ```
+
+    Store this in version control or secure storage.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Migration already applied">
+    **Symptoms**: Error about existing tables or policies
+
+    **Solution**: Migrations are idempotent when using `IF NOT EXISTS`:
+    ```sql
+    CREATE TABLE IF NOT EXISTS ...
+    CREATE POLICY IF NOT EXISTS ...
+    ```
+
+    If missing, manually drop and recreate, or skip the migration.
+  </Accordion>
+
+  <Accordion title="Foreign key constraint violation">
+    **Symptoms**: `violates foreign key constraint`
+
+    **Solution**: Check migration order. Tables must be created before they're referenced:
+    1. Create parent tables first (`users`, `cases`, `items`)
+    2. Then create child tables (`case_items`, `user_items`)
+    3. Ensure referenced IDs exist before inserting data
+  </Accordion>
+
+  <Accordion title="RLS policy conflict">
+    **Symptoms**: `policy already exists` or access denied errors
+
+    **Solution**: Drop existing policies before recreating:
+    ```sql
+    DROP POLICY IF EXISTS "policy_name" ON table_name;
+    CREATE POLICY "policy_name" ON table_name ...
+    ```
+  </Accordion>
+
+  <Accordion title="Permission denied">
+    **Symptoms**: `permission denied` when running migrations
+
+    **Solution**: Ensure you're using the database password or service role key:
+    - Dashboard: Automatically uses correct credentials
+    - CLI: Run `supabase link` with correct project ref
+    - Direct: Use `postgres` user with database password
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Timestamps" icon="clock">
+    Always prefix migration files with timestamps:
+    ```
+    YYYYMMDDHHMMSS_description.sql
+    ```
+  </Card>
+
+  <Card title="Idempotent Migrations" icon="rotate">
+    Use `IF NOT EXISTS` and `IF EXISTS` to make migrations safe to run multiple times.
+  </Card>
+
+  <Card title="Test First" icon="flask">
+    Always test migrations on a development database before production.
+  </Card>
+
+  <Card title="Document Changes" icon="file-text">
+    Add comments explaining complex migrations:
+    ```sql
+    -- Fix schema mismatch between v1 and v2
+    ```
+  </Card>
+
+  <Card title="Small Changes" icon="edit">
+    Create focused migrations that do one thing well. Don't combine unrelated changes.
+  </Card>
+
+  <Card title="Backup First" icon="database">
+    Export your database before running migrations in production.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication Setup" icon="shield" href="/features/authentication">
+    Configure user authentication and authorization
+  </Card>
+
+  <Card title="Database Queries" icon="code" href="/development/database-queries">
+    Learn how to query the database in your application
+  </Card>
+</CardGroup>

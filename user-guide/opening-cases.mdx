@@ -1,0 +1,337 @@
+---
+title: 'Opening Cases'
+description: 'Step-by-step guide to browse, select, and open mystery cases'
+icon: 'box-open'
+---
+
+## Browsing Available Cases
+
+The Cajas platform offers a variety of cases at different price points. All cases are displayed on the home page with powerful filtering options.
+
+### Case Browser Interface
+
+The **Case Browser** component (`/components/case-browser.tsx`) provides:
+
+<CardGroup cols={2}>
+  <Card title="Search Bar" icon="magnifying-glass">
+    Search cases by name using the input field on the left side of the filter bar.
+    
+    Placeholder: **"Buscar caja..."**
+  </Card>
+
+  <Card title="Price Filter" icon="dollar-sign">
+    Filter cases by price ranges:
+    - Cualquier precio (Any price)
+    - $0 - $10,000
+    - $10,000 - $25,000
+    - $25,000 - $50,000
+    - $50,000 - $75,000
+    - $75,000 - $100,000
+  </Card>
+
+  <Card title="Sort Options" icon="arrow-down-short-wide">
+    Order cases by:
+    - **Más Nuevos** - Newest first (default)
+    - **Menor Precio** - Lowest price first
+    - **Mayor Precio** - Highest price first
+  </Card>
+
+  <Card title="Grid Display" icon="grid">
+    Cases display in a responsive grid:
+    - 2 columns on mobile
+    - 3 columns on tablet
+    - 4 columns on desktop
+    - 5 columns on 2XL screens
+  </Card>
+</CardGroup>
+
+### Using Filters
+
+<Steps>
+  <Step title="Search by Name">
+    Type in the search bar to filter cases by name. The search is case-insensitive and updates in real-time.
+  </Step>
+
+  <Step title="Set Price Range">
+    Click the **Precio** dropdown and select your desired price range. The grid updates immediately to show only matching cases.
+  </Step>
+
+  <Step title="Sort Results">
+    Click the **Ordenar** dropdown to change the sorting order. Cases rearrange based on your selection.
+  </Step>
+
+  <Step title="Browse Results">
+    Scroll through the grid to view all cases matching your filters.
+    
+    If no cases match, you'll see: **"No se encontraron cajas con estos filtros."**
+  </Step>
+</Steps>
+
+<Note>
+  All filters work together. For example, you can search "iPhone" + price range "$10,000-$25,000" + sort by "Lowest price" to find the cheapest iPhone cases in that range.
+</Note>
+
+## Understanding Case Cards
+
+Each case is displayed as a card with key information:
+
+<Tabs>
+  <Tab title="Visual Elements">
+    - **Case Image** - High-quality product image at the top
+    - **Hover Effect** - Card lifts slightly on hover with a glow effect
+    - **Responsive Design** - Scales beautifully on all screen sizes
+  </Tab>
+
+  <Tab title="Case Information">
+    - **Case Name** - Displayed at the bottom in white text
+    - **Price** - Shown with ARS flag icon and formatted currency
+    - **Slug** - Used in the URL for direct access
+  </Tab>
+
+  <Tab title="Actions">
+    Click anywhere on the card to navigate to the case detail page:
+    
+    `/cases/{slug}`
+    
+    For example: `/cases/iphone-15-pro-max`
+  </Tab>
+</Tabs>
+
+## Case Detail Page
+
+When you click a case card, you're taken to the dedicated case opener page.
+
+### Page Layout
+
+The case detail page (`/app/cases/[slug]/page.tsx`) includes:
+
+<CardGroup cols={2}>
+  <Card title="Header Section" icon="arrow-left">
+    - **Back Button** - Returns to home page ("Atrás")
+    - **Case Name** - Large, bold display at center
+    - **Price** - With ARS flag icon
+    - **Mute Button** - Toggle sound effects on/off
+  </Card>
+
+  <Card title="Case Contents" icon="list">
+    Below the spinner, you'll see all possible items you can win:
+    - Sorted by value (highest first)
+    - Rarity indicators (color-coded borders)
+    - Item images and names
+    - Exact prices in ARS
+    - Probability percentages
+  </Card>
+</CardGroup>
+
+### Case Spinner Interface
+
+The spinner window features:
+
+- **Neon Frame** - Dark background with border glow
+- **Center Line** - Vertical line showing where the item lands
+- **Top/Bottom Markers** - Yellow arrows indicating the selection point
+- **Side Fade Effects** - Gradient edges for visual depth
+- **Item Cards** - Scrolling horizontally with rarity-based bottom borders:
+  - Yellow = Legendary
+  - Purple = Epic
+  - Blue = Rare
+  - Gray = Common
+
+## Opening a Case
+
+Follow these steps to open your case and win an item.
+
+<Steps>
+  <Step title="Ensure You're Logged In">
+    The **"Abrir Caja"** button requires authentication.
+    
+    If you're not logged in:
+    - Clicking the button triggers the auth modal
+    - You'll see the login/signup form
+    - Complete authentication to continue
+  </Step>
+
+  <Step title="Check Your Balance">
+    Make sure you have sufficient balance to open the case.
+    
+    Your balance is visible in the navbar. If insufficient:
+    1. Navigate to `/wallet`
+    2. Deposit funds (see [Wallet Management](/user-guide/wallet-management))
+    3. Return to the case page
+  </Step>
+
+  <Step title="Click 'Abrir Caja'">
+    Click the golden **"Abrir Caja"** (Open Case) button below the spinner.
+    
+    The button features:
+    - Gradient background (yellow to orange)
+    - Hover effects
+    - Active press animation (scales down slightly)
+    - Disabled state while spinning
+  </Step>
+
+  <Step title="Server Processing">
+    The system makes a POST request to `/api/cases/open` with:
+    - Your user ID (from session)
+    - The case ID
+    - Optional client seed (for provably fair)
+
+    The server:
+    1. Verifies your balance
+    2. Deducts the case price
+    3. Uses provably fair algorithm to select winner
+    4. Creates transaction record
+    5. Adds item to your inventory
+    6. Returns the winning item data
+  </Step>
+
+  <Step title="Spinner Animation">
+    Once the server responds:
+    
+    **Duration:** 8 seconds (8000ms)
+    
+    **Visual Effects:**
+    - Items scroll rapidly at first
+    - Gradually slows down (cubic-bezier easing)
+    - **Sound effects** play as items pass the center line
+    - Comes to a smooth stop on the winning item
+    
+    **Technical Details:**
+    - Winner is placed at index 75 in the reel
+    - Reel contains 110 total items
+    - Animation uses CSS transforms for smooth performance
+  </Step>
+
+  <Step title="Winner Reveal">
+    When the spinner stops, a modal appears showing:
+    
+    **Modal Contents:**
+    - **"¡FELICIDADES!"** headline
+    - Large item image with rarity glow
+    - Rarity badge (color-coded)
+    - Item name
+    - Item value in ARS
+    - **Completion sound effect** plays (fin.mp3)
+  </Step>
+
+  <Step title="Claim Your Winnings">
+    The winner modal has a button:
+    
+    **"Vender por {price}"** (Sell for {price})
+    
+    Clicking this:
+    - Closes the modal
+    - The item is already in your inventory
+    - You can view it in your profile
+    
+    To actually sell the item, navigate to your inventory management page.
+  </Step>
+</Steps>
+
+<Warning>
+  The case opening is **not reversible**. Once you click "Abrir Caja" and the server processes your request:
+  - The case price is immediately deducted
+  - The winner is determined by provably fair algorithm
+  - The item is added to your inventory
+  - The transaction is recorded
+  
+  Make sure you want to open the case before clicking!
+</Warning>
+
+## Provably Fair System
+
+Every case opening uses a cryptographically secure provably fair algorithm.
+
+### How It Works
+
+<Steps>
+  <Step title="Seeds Generation">
+    Three components determine your outcome:
+    
+    - **Server Seed** - Random string generated by the server (hashed)
+    - **Client Seed** - Your personal seed (customizable)
+    - **Nonce** - Increments with each game (prevents reuse)
+  </Step>
+
+  <Step title="Roll Calculation">
+    The server combines these values using HMAC-SHA256:
+    
+    ```javascript
+    const hash = crypto.createHmac('sha256', serverSeed)
+      .update(`${clientSeed}:${nonce}`)
+      .digest('hex')
+    ```
+    
+    The first 8 characters are converted to a number between 0-100.
+  </Step>
+
+  <Step title="Item Selection">
+    The roll number determines which item you win based on cumulative probabilities:
+    
+    - Item 1: 0-5 (5% chance)
+    - Item 2: 5-15 (10% chance)
+    - Item 3: 15-40 (25% chance)
+    - Item 4: 40-100 (60% chance)
+  </Step>
+
+  <Step title="Verification">
+    After the game, you can verify the result:
+    1. Navigate to `/provably-fair`
+    2. View your game history
+    3. See the seeds and roll result
+    4. Verify the calculation yourself
+  </Step>
+</Steps>
+
+<Tip>
+  Change your client seed anytime in the provably fair settings to ensure complete randomness and trust in the system.
+</Tip>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Button says 'Abriendo...' and won't respond">
+    The case is currently opening. Wait for the animation to complete (8 seconds) before attempting another open.
+  </Accordion>
+
+  <Accordion title="Auth modal opens instead of case opening">
+    You're not logged in. Complete authentication and try again.
+  </Accordion>
+
+  <Accordion title="Error: 'Failed to open case'">
+    Common causes:
+    - Insufficient balance
+    - Network connectivity issue
+    - Server error
+    
+    Check your balance and refresh the page. If the issue persists, contact support.
+  </Accordion>
+
+  <Accordion title="No sound effects during spin">
+    Check the mute button in the top-right. The speaker icon should not have a red tint. Click to unmute.
+  </Accordion>
+
+  <Accordion title="Winner modal won't close">
+    Click the X button in the top-right corner, or click outside the modal (on the dark backdrop).
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Budget Management" icon="piggy-bank">
+    Set a budget before opening cases. The platform is for entertainment - never spend more than you can afford to lose.
+  </Card>
+
+  <Card title="Understand Odds" icon="percent">
+    Review the case contents and probabilities before opening. Higher-value items typically have lower drop rates.
+  </Card>
+
+  <Card title="Sound Settings" icon="volume">
+    Use the mute button if you're in a public space or prefer to play without sound.
+  </Card>
+
+  <Card title="Verify Results" icon="shield-check">
+    Check the provably fair page to verify your wins are legitimate and random.
+  </Card>
+</CardGroup>

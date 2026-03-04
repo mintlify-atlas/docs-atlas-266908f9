@@ -1,0 +1,506 @@
+---
+title: 'Managing Inventory'
+description: 'View your won items, manage your collection, and sell items for balance'
+icon: 'box-archive'
+---
+
+## Understanding Your Inventory
+
+Every time you open a case and win an item, it's automatically added to your inventory. Your inventory is stored in the `user_items` table in the database.
+
+### Inventory Data Structure
+
+Each item in your inventory contains:
+
+<ResponseField name="id" type="uuid" required>
+  Unique identifier for this inventory entry
+</ResponseField>
+
+<ResponseField name="user_id" type="uuid" required>
+  Your user ID (links to your profile)
+</ResponseField>
+
+<ResponseField name="item_id" type="uuid" required>
+  The item's ID (links to items table)
+</ResponseField>
+
+<ResponseField name="status" type="string" default="in_inventory">
+  Current status of the item:
+  - `in_inventory` - Available in your collection
+  - `sold` - Sold for balance
+  - `withdrawn` - Shipped to your address
+</ResponseField>
+
+<ResponseField name="created_at" type="timestamp" required>
+  When you won this item
+</ResponseField>
+
+### Item Properties
+
+Each item has these attributes (from `items` table):
+
+<Tabs>
+  <Tab title="Basic Info">
+    - **Name** - Item display name
+    - **Image URL** - Product image
+    - **Price** - Value in ARS
+    - **Created At** - When added to platform
+  </Tab>
+
+  <Tab title="Rarity">
+    Items are classified by rarity:
+    
+    <CardGroup cols={2}>
+      <Card title="Common" icon="circle">
+        Standard items with higher drop rates
+        
+        Color: Gray/White
+      </Card>
+      
+      <Card title="Rare" icon="star">
+        Uncommon items with medium value
+        
+        Color: Blue
+      </Card>
+      
+      <Card title="Epic" icon="gem">
+        High-value items with low drop rates
+        
+        Color: Purple
+      </Card>
+      
+      <Card title="Legendary" icon="crown">
+        Extremely rare, highest-value items
+        
+        Color: Yellow/Gold
+      </Card>
+    </CardGroup>
+  </Tab>
+
+  <Tab title="Financial">
+    - **Purchase Price** - What you paid for the case
+    - **Item Value** - What you can sell it for
+    - **Profit/Loss** - Difference between the two
+    
+    <Note>
+      Most cases offer a mix of items above and below the case price, creating an exciting risk/reward dynamic.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Accessing Your Inventory
+
+Currently, inventory viewing is integrated into the profile and case opening flows.
+
+### Future Inventory Page
+
+A dedicated inventory page will be located at `/inventory` with features:
+
+<Steps>
+  <Step title="Navigate to Inventory">
+    Access via:
+    - Direct URL: `/inventory`
+    - Profile dropdown menu
+    - Sidebar navigation (when implemented)
+  </Step>
+
+  <Step title="View Your Collection">
+    See all items with status `in_inventory` displayed as cards showing:
+    - Item image
+    - Item name
+    - Rarity badge
+    - Current value
+    - Date won
+  </Step>
+
+  <Step title="Filter and Sort">
+    Organize your inventory by:
+    - Rarity level
+    - Date acquired
+    - Item value
+    - Status (active/sold/withdrawn)
+  </Step>
+
+  <Step title="Select Actions">
+    Each item card will have action buttons:
+    - **Sell** - Convert to balance
+    - **Withdraw** - Ship to your address
+    - **Details** - View full item information
+  </Step>
+</Steps>
+
+## Selling Items
+
+Convert your won items into balance to open more cases.
+
+### Sell Flow
+
+<Steps>
+  <Step title="Select Item to Sell">
+    From your inventory, identify the item you want to sell.
+    
+    Consider:
+    - Do you want the physical item?
+    - Is the sell value good?
+    - Do you need balance for more cases?
+  </Step>
+
+  <Step title="Click Sell Button">
+    On the winner modal after opening a case, you can immediately sell via:
+    
+    **"Vender por {price}"** button
+    
+    Or from the inventory page (when implemented), click the sell action on any item card.
+  </Step>
+
+  <Step title="Confirm Sale">
+    A confirmation dialog appears:
+    
+    ```
+    ¿Estás seguro que quieres vender este artículo?
+    
+    Nombre: [Item Name]
+    Valor: [Item Price] ARS
+    
+    Esta acción no se puede deshacer.
+    ```
+    
+    Click **"Confirmar Venta"** to proceed.
+  </Step>
+
+  <Step title="Transaction Processing">
+    The system:
+    1. Updates item status to `sold`
+    2. Creates transaction record (type: `item_sell`)
+    3. Adds item value to your balance
+    4. Refreshes your balance display
+    5. Shows success notification
+  </Step>
+
+  <Step title="Balance Updated">
+    Your new balance appears immediately in:
+    - Navbar balance display
+    - Wallet page
+    - Transaction history
+  </Step>
+</Steps>
+
+<Warning>
+  **Selling is permanent!** Once you sell an item:
+  - It cannot be unsold
+  - You cannot withdraw it as a physical item
+  - It's removed from your active inventory
+  
+  Only sell items you're certain you don't want to keep.
+</Warning>
+
+### Bulk Selling
+
+For users with many items, bulk selling will be available:
+
+<Accordion title="How to Bulk Sell (Coming Soon)">
+  1. Navigate to inventory page
+  2. Click **"Selección Multiple"** button
+  3. Check the boxes next to items you want to sell
+  4. Click **"Vender Seleccionados"** 
+  5. Review total value in confirmation modal
+  6. Confirm to sell all selected items at once
+  
+  This is especially useful for selling multiple common items quickly.
+</Accordion>
+
+## Withdrawing Physical Items
+
+For high-value items, you can request physical shipment to your address.
+
+### Withdrawal Eligibility
+
+<Note>
+  Physical withdrawal is typically available for:
+  - Epic and Legendary rarity items
+  - Items valued over a certain threshold (e.g., $50,000 ARS)
+  - Items marked as "shippable" in the database
+  
+  Check the item details to see if withdrawal is available.
+</Note>
+
+### Withdrawal Process
+
+<Steps>
+  <Step title="Update Shipping Address">
+    Before requesting withdrawal:
+    
+    1. Navigate to `/profile`
+    2. Fill in **"Dirección de envío"** completely:
+       - Street and number
+       - City
+       - Province
+       - Postal code
+    3. Add your **Phone Number**
+    4. Save changes
+    
+    <Warning>
+      Withdrawal requests cannot be processed without a complete shipping address.
+    </Warning>
+  </Step>
+
+  <Step title="Request Withdrawal">
+    From your inventory:
+    
+    1. Find the item you want to withdraw
+    2. Click **"Solicitar Envío"** (Request Shipment)
+    3. Review item details and shipping address
+    4. Confirm the request
+  </Step>
+
+  <Step title="Verification">
+    The support team may contact you to:
+    - Verify your identity (DNI check)
+    - Confirm shipping address
+    - Provide shipment timeline
+    - Request additional information
+  </Step>
+
+  <Step title="Item Status Update">
+    Once withdrawal is approved:
+    - Item status changes to `withdrawn`
+    - Item is removed from active inventory
+    - You receive a tracking number
+    - Shipment is processed
+  </Step>
+
+  <Step title="Delivery">
+    Typical delivery times:
+    - Local (Buenos Aires): 3-5 business days
+    - National (Argentina): 5-10 business days
+    - International: 15-30 business days (if available)
+  </Step>
+</Steps>
+
+<Accordion title="Withdrawal Fees">
+  Shipping costs may apply based on:
+  - Item size and weight
+  - Delivery location
+  - Shipping method (standard vs express)
+  
+  Fees are deducted from your balance before shipment. You'll see the exact cost during the withdrawal request.
+</Accordion>
+
+## Inventory Organization
+
+### Viewing Options
+
+Customize how you view your collection:
+
+<Tabs>
+  <Tab title="Grid View">
+    Default view showing items as cards:
+    - 3-4 columns on desktop
+    - Large item images
+    - Quick action buttons
+    - Rarity borders
+  </Tab>
+
+  <Tab title="List View">
+    Compact view with items in rows:
+    - Item thumbnail
+    - Name and rarity
+    - Value and date
+    - Status indicator
+    - Action buttons
+  </Tab>
+
+  <Tab title="History View">
+    Timeline of all items you've ever won:
+    - Includes sold items
+    - Shows profit/loss
+    - Transaction details
+    - Case origin
+  </Tab>
+</Tabs>
+
+### Filtering Options
+
+Narrow down your inventory view:
+
+<CardGroup cols={2}>
+  <Card title="By Status" icon="filter">
+    - Active Items Only
+    - Sold Items
+    - Withdrawn Items
+    - All Items
+  </Card>
+
+  <Card title="By Rarity" icon="star">
+    - Legendary
+    - Epic
+    - Rare
+    - Common
+    - All Rarities
+  </Card>
+
+  <Card title="By Value" icon="dollar-sign">
+    - High to Low
+    - Low to High
+    - Above threshold
+    - Below threshold
+  </Card>
+
+  <Card title="By Date" icon="calendar">
+    - Newest First
+    - Oldest First
+    - Last 7 Days
+    - Last 30 Days
+    - All Time
+  </Card>
+</CardGroup>
+
+### Search Functionality
+
+Find specific items quickly:
+
+```
+Search inventory by:
+- Item name
+- Case name (where you won it)
+- Rarity
+- Value range
+```
+
+## Inventory Statistics
+
+Track your collection's performance:
+
+<Tabs>
+  <Tab title="Overview">
+    Dashboard showing:
+    - Total items won
+    - Total value (active inventory)
+    - Items sold (count and value)
+    - Items withdrawn (count)
+  </Tab>
+
+  <Tab title="Profitability">
+    Financial metrics:
+    - Total spent on cases
+    - Total value won
+    - Net profit/loss
+    - Average item value
+    - Best win (highest value)
+  </Tab>
+
+  <Tab title="Rarity Breakdown">
+    Collection composition:
+    - Legendary: X items (Y%)
+    - Epic: X items (Y%)
+    - Rare: X items (Y%)
+    - Common: X items (Y%)
+    
+    Displayed as a pie chart or bar graph.
+  </Tab>
+
+  <Tab title="Case History">
+    Which cases gave you the best items:
+    - Cases opened (count)
+    - Favorite case (most opened)
+    - Best case (highest avg value)
+    - Lucky case (best single win)
+  </Tab>
+</Tabs>
+
+## Database Queries
+
+For developers, here are the key queries for inventory management:
+
+### Fetch User Inventory
+
+```sql
+SELECT 
+  ui.id,
+  ui.status,
+  ui.created_at,
+  i.name,
+  i.image_url,
+  i.rarity,
+  i.price
+FROM user_items ui
+JOIN items i ON ui.item_id = i.id
+WHERE ui.user_id = $1
+  AND ui.status = 'in_inventory'
+ORDER BY ui.created_at DESC;
+```
+
+### Sell Item Transaction
+
+```sql
+BEGIN;
+
+-- Update item status
+UPDATE user_items
+SET status = 'sold'
+WHERE id = $1 AND user_id = $2;
+
+-- Add balance
+UPDATE users
+SET balance = balance + $3
+WHERE id = $2;
+
+-- Record transaction
+INSERT INTO transactions (user_id, amount, type, reference_id)
+VALUES ($2, $3, 'item_sell', $1);
+
+COMMIT;
+```
+
+### Inventory Statistics
+
+```sql
+SELECT 
+  COUNT(*) as total_items,
+  SUM(CASE WHEN status = 'in_inventory' THEN 1 ELSE 0 END) as active_items,
+  SUM(CASE WHEN status = 'sold' THEN 1 ELSE 0 END) as sold_items,
+  SUM(CASE WHEN status = 'in_inventory' THEN i.price ELSE 0 END) as total_value
+FROM user_items ui
+JOIN items i ON ui.item_id = i.id
+WHERE ui.user_id = $1;
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Regular Review" icon="clock">
+    Check your inventory regularly to:
+    - Sell items you don't want
+    - Track valuable items
+    - Plan withdrawals
+    - Monitor collection growth
+  </Card>
+
+  <Card title="Strategic Selling" icon="chart-line">
+    Optimize your selling strategy:
+    - Keep rare items for withdrawal
+    - Sell common items for more cases
+    - Build balance for high-value cases
+    - Track profit/loss trends
+  </Card>
+
+  <Card title="Address Accuracy" icon="map-pin">
+    Keep your shipping address updated:
+    - Verify before each withdrawal
+    - Include phone number
+    - Use clear, complete format
+    - Update if you move
+  </Card>
+
+  <Card title="Item Protection" icon="shield-check">
+    Protect your valuable items:
+    - Don't sell rare items impulsively
+    - Consider withdrawal for very valuable items
+    - Keep proof of ownership
+    - Contact support if issues arise
+  </Card>
+</CardGroup>
+
+<Tip>
+  Set a personal rule: Keep items above a certain value (e.g., $100,000 ARS) for withdrawal, and sell everything below that threshold to maximize your case-opening budget.
+</Tip>

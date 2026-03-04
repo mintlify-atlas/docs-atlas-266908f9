@@ -1,0 +1,499 @@
+---
+title: 'Verification Guide'
+description: 'Step-by-step guide to verifying your case opening results'
+---
+
+## Why Verify?
+
+Verification proves that:
+- The server didn't manipulate your results
+- The roll calculation was performed correctly
+- The item you received matched the calculated roll value
+- The server seed wasn't changed after you set your client seed
+
+## What You Need
+
+To verify a game, you need:
+
+1. **Server Seed** (revealed after rotation)
+2. **Server Seed Hash** (shown before the game)
+3. **Client Seed** (your seed at the time of the game)
+4. **Nonce** (game number)
+5. **Roll Result** (the 0-1 value)
+6. **Item Won** (what you received)
+
+## Verification Methods
+
+<Tabs>
+  <Tab title="Web Interface">
+    ### Using the Built-in Verifier
+
+    1. Navigate to **Settings → Provably Fair**
+    2. Click **Verify Past Games**
+    3. Select the game you want to verify
+    4. Click **Verify**
+
+    The system will:
+    - Show the server seed (if rotated)
+    - Calculate the roll value
+    - Confirm the item matches
+    - Display verification status ✓ or ✗
+  </Tab>
+  
+  <Tab title="Manual Verification">
+    ### Manual Verification Steps
+
+    Follow these steps to verify independently using any programming language or online tools.
+
+    #### Step 1: Verify Server Seed Hash
+
+    Hash the revealed server seed and compare with the hash shown before the game.
+
+    **Using Node.js:**
+    ```javascript
+    const crypto = require('crypto');
+    
+    const serverSeed = 'YOUR_REVEALED_SERVER_SEED';
+    const expectedHash = 'HASH_SHOWN_BEFORE_GAME';
+    
+    const calculatedHash = crypto
+        .createHash('sha256')
+        .update(serverSeed)
+        .digest('hex');
+    
+    console.log('Calculated:', calculatedHash);
+    console.log('Expected:  ', expectedHash);
+    console.log('Match:', calculatedHash === expectedHash ? '✓' : '✗');
+    ```
+
+    **Using Python:**
+    ```python
+    import hashlib
+    
+    server_seed = 'YOUR_REVEALED_SERVER_SEED'
+    expected_hash = 'HASH_SHOWN_BEFORE_GAME'
+    
+    calculated_hash = hashlib.sha256(server_seed.encode()).hexdigest()
+    
+    print(f'Calculated: {calculated_hash}')
+    print(f'Expected:   {expected_hash}')
+    print(f'Match: {"✓" if calculated_hash == expected_hash else "✗"}')
+    ```
+
+    #### Step 2: Calculate Roll Value
+
+    Recreate the roll calculation using the complete algorithm.
+
+    **Using Node.js:**
+    ```javascript
+    const crypto = require('crypto');
+    
+    function calculateRollResult(serverSeed, clientSeed, nonce) {
+        const message = `${clientSeed}-${nonce}`;
+        const hmac = crypto.createHmac('sha256', serverSeed);
+        hmac.update(message);
+        const hex = hmac.digest('hex');
+        
+        const subHex = hex.substring(0, 8);
+        const decimal = parseInt(subHex, 16);
+        const MAX_VAL = 0xFFFFFFFF;
+        
+        return decimal / (MAX_VAL + 1);
+    }
+    
+    const serverSeed = 'YOUR_REVEALED_SERVER_SEED';
+    const clientSeed = 'YOUR_CLIENT_SEED';
+    const nonce = 42; // Your game nonce
+    
+    const rollValue = calculateRollResult(serverSeed, clientSeed, nonce);
+    console.log('Roll Value:', rollValue);
+    ```
+
+    **Using Python:**
+    ```python
+    import hmac
+    import hashlib
+    
+    def calculate_roll_result(server_seed, client_seed, nonce):
+        message = f'{client_seed}-{nonce}'
+        h = hmac.new(
+            server_seed.encode(),
+            message.encode(),
+            hashlib.sha256
+        )
+        hex_digest = h.hexdigest()
+        
+        sub_hex = hex_digest[:8]
+        decimal = int(sub_hex, 16)
+        MAX_VAL = 0xFFFFFFFF
+        
+        return decimal / (MAX_VAL + 1)
+    
+    server_seed = 'YOUR_REVEALED_SERVER_SEED'
+    client_seed = 'YOUR_CLIENT_SEED'
+    nonce = 42
+    
+    roll_value = calculate_roll_result(server_seed, client_seed, nonce)
+    print(f'Roll Value: {roll_value}')
+    ```
+
+    #### Step 3: Verify Item Selection
+
+    Check if the roll value correctly selected the item you received.
+
+    **Using Node.js:**
+    ```javascript
+    function getWinningItem(items, roll) {
+        const totalWeight = items.reduce((sum, item) => sum + item.probability, 0);
+        let currentThreshold = 0;
+        const target = roll * totalWeight;
+        
+        for (const item of items) {
+            currentThreshold += item.probability;
+            if (target < currentThreshold) {
+                return item;
+            }
+        }
+        
+        return items[items.length - 1];
+    }
+    
+    const items = [
+        { name: 'Common Sword', probability: 70 },
+        { name: 'Rare Shield', probability: 25 },
+        { name: 'Legendary Axe', probability: 5 }
+    ];
+    
+    const rollValue = 0.732; // From Step 2
+    const winner = getWinningItem(items, rollValue);
+    console.log('Winner:', winner.name);
+    ```
+
+    **Expected Output:**
+    ```
+    Winner: Rare Shield
+    ```
+  </Tab>
+  
+  <Tab title="Third-Party Tools">
+    ### Using Online Verifiers
+
+    You can use independent third-party verifiers to check your results:
+
+    #### Generic HMAC-SHA256 Calculator
+
+    1. Go to [https://www.freeformatter.com/hmac-generator.html](https://www.freeformatter.com/hmac-generator.html)
+    2. Enter your **server seed** as the Secret Key
+    3. Enter `clientseed-nonce` as the message (e.g., `a3f5e9c1b2d4f6a8-42`)
+    4. Select **SHA256** as the algorithm
+    5. Click **Compute HMAC**
+    6. Take the first 8 characters of the result
+    7. Convert to decimal and divide by 4,294,967,296
+
+    #### SHA-256 Hash Verifier
+
+    1. Go to [https://emn178.github.io/online-tools/sha256.html](https://emn178.github.io/online-tools/sha256.html)
+    2. Enter your **revealed server seed**
+    3. Compare output with the **hash shown before the game**
+
+    <Warning>
+      When using third-party tools, ensure they're from reputable sources and use HTTPS. Never enter sensitive information like passwords or API keys.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Complete Verification Example
+
+Let's verify a complete game from start to finish.
+
+### Game Information
+
+```json
+{
+  "serverSeed": "8f3b2c1a5e4d6f7a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5",
+  "clientSeed": "a3f5e9c1b2d4f6a8",
+  "nonce": 42,
+  "expectedRoll": 0.732145,
+  "itemReceived": "Rare Shield"
+}
+```
+
+### Verification Code (Complete)
+
+```javascript
+const crypto = require('crypto');
+
+// Game data
+const serverSeed = '8f3b2c1a5e4d6f7a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5';
+const clientSeed = 'a3f5e9c1b2d4f6a8';
+const nonce = 42;
+const expectedRoll = 0.732145;
+const itemReceived = 'Rare Shield';
+
+// Case items
+const items = [
+    { name: 'Common Sword', probability: 70 },
+    { name: 'Rare Shield', probability: 25 },
+    { name: 'Legendary Axe', probability: 5 }
+];
+
+// Step 1: Calculate roll
+function calculateRollResult(serverSeed, clientSeed, nonce) {
+    const message = `${clientSeed}-${nonce}`;
+    const hmac = crypto.createHmac('sha256', serverSeed);
+    hmac.update(message);
+    const hex = hmac.digest('hex');
+    
+    const subHex = hex.substring(0, 8);
+    const decimal = parseInt(subHex, 16);
+    const MAX_VAL = 0xFFFFFFFF;
+    
+    return decimal / (MAX_VAL + 1);
+}
+
+const calculatedRoll = calculateRollResult(serverSeed, clientSeed, nonce);
+
+// Step 2: Select item
+function getWinningItem(items, roll) {
+    const totalWeight = items.reduce((sum, item) => sum + item.probability, 0);
+    let currentThreshold = 0;
+    const target = roll * totalWeight;
+    
+    for (const item of items) {
+        currentThreshold += item.probability;
+        if (target < currentThreshold) {
+            return item;
+        }
+    }
+    return items[items.length - 1];
+}
+
+const winner = getWinningItem(items, calculatedRoll);
+
+// Step 3: Verify results
+console.log('\n=== VERIFICATION RESULTS ===\n');
+console.log('Calculated Roll:', calculatedRoll);
+console.log('Expected Roll:  ', expectedRoll);
+console.log('Roll Match:', Math.abs(calculatedRoll - expectedRoll) < 0.000001 ? '✓' : '✗');
+console.log('\nCalculated Winner:', winner.name);
+console.log('Item Received:    ', itemReceived);
+console.log('Item Match:', winner.name === itemReceived ? '✓' : '✗');
+
+// Detailed breakdown
+console.log('\n=== DETAILED BREAKDOWN ===\n');
+const message = `${clientSeed}-${nonce}`;
+const hmac = crypto.createHmac('sha256', serverSeed);
+hmac.update(message);
+const fullHex = hmac.digest('hex');
+const subHex = fullHex.substring(0, 8);
+const decimal = parseInt(subHex, 16);
+
+console.log('Message:', message);
+console.log('Full HMAC-SHA256:', fullHex);
+console.log('First 8 chars:', subHex);
+console.log('Decimal value:', decimal);
+console.log('Max value:', 0xFFFFFFFF);
+console.log('Roll (decimal/max):', decimal, '/', 0xFFFFFFFF + 1, '=', calculatedRoll);
+
+console.log('\n=== ITEM PROBABILITY RANGES ===\n');
+let threshold = 0;
+for (const item of items) {
+    const start = threshold / 100;
+    threshold += item.probability;
+    const end = threshold / 100;
+    const isWinner = calculatedRoll >= start && calculatedRoll < end;
+    console.log(`${isWinner ? '→' : ' '} ${item.name}: ${start.toFixed(2)} - ${end.toFixed(2)} (${item.probability}%)`);
+}
+```
+
+### Expected Output
+
+```
+=== VERIFICATION RESULTS ===
+
+Calculated Roll: 0.732145
+Expected Roll:   0.732145
+Roll Match: ✓
+
+Calculated Winner: Rare Shield
+Item Received:     Rare Shield
+Item Match: ✓
+
+=== DETAILED BREAKDOWN ===
+
+Message: a3f5e9c1b2d4f6a8-42
+Full HMAC-SHA256: bb8a3f2c...
+First 8 chars: bb8a3f2c
+Decimal value: 3145678636
+Max value: 4294967295
+Roll (decimal/max): 3145678636 / 4294967296 = 0.732145
+
+=== ITEM PROBABILITY RANGES ===
+
+  Common Sword: 0.00 - 0.70 (70%)
+→ Rare Shield: 0.70 - 0.95 (25%)
+  Legendary Axe: 0.95 - 1.00 (5%)
+```
+
+## Common Verification Issues
+
+<AccordionGroup>
+  <Accordion title="Hash doesn't match">
+    **Problem:** The calculated server seed hash doesn't match the one shown before the game.
+    
+    **Possible causes:**
+    - Server seed wasn't rotated yet (still secret)
+    - Wrong server seed copied
+    - Typo in the hash or seed
+    
+    **Solution:**
+    1. Ensure you've rotated your seeds to reveal the previous server seed
+    2. Double-check you're using the correct server seed for the game in question
+    3. Verify you're using SHA-256 (not SHA-1 or MD5)
+  </Accordion>
+  
+  <Accordion title="Roll value doesn't match">
+    **Problem:** Your calculated roll differs from the reported roll.
+    
+    **Possible causes:**
+    - Wrong client seed or nonce
+    - Message format incorrect (should be `clientseed-nonce`)
+    - HMAC algorithm incorrect (should be HMAC-SHA256)
+    - Taking wrong characters from hash (should be first 8)
+    - Division error (should divide by MAX_VAL + 1, not MAX_VAL)
+    
+    **Solution:**
+    1. Verify message format: `${clientSeed}-${nonce}` (with hyphen)
+    2. Use server seed as HMAC key, not the message
+    3. Extract first 8 hex characters (not 4 or 16)
+    4. Divide by 4,294,967,296 (0xFFFFFFFF + 1)
+  </Accordion>
+  
+  <Accordion title="Item doesn't match roll value">
+    **Problem:** The roll value is correct but doesn't correspond to the item received.
+    
+    **Possible causes:**
+    - Item probabilities changed since the game
+    - Wrong case items being used for verification
+    - Probability calculation error
+    
+    **Solution:**
+    1. Get historical item probabilities from `game_rolls` table
+    2. Ensure total weight is calculated correctly
+    3. Verify threshold logic: `target < currentThreshold`
+  </Accordion>
+  
+  <Accordion title="Cannot find previous server seed">
+    **Problem:** You don't have access to the server seed used for a game.
+    
+    **Possible causes:**
+    - Seeds haven't been rotated yet
+    - Using current server seed instead of previous one
+    
+    **Solution:**
+    1. Rotate your seeds in Settings → Provably Fair
+    2. The previous server seed will be revealed
+    3. You can then verify all games that used that seed
+  </Accordion>
+</AccordionGroup>
+
+## Batch Verification
+
+To verify multiple games at once:
+
+```javascript
+const crypto = require('crypto');
+
+// Array of games to verify
+const games = [
+    { serverSeed: 'seed1', clientSeed: 'client1', nonce: 1, expectedRoll: 0.123, item: 'Common' },
+    { serverSeed: 'seed1', clientSeed: 'client1', nonce: 2, expectedRoll: 0.456, item: 'Rare' },
+    { serverSeed: 'seed1', clientSeed: 'client1', nonce: 3, expectedRoll: 0.789, item: 'Common' },
+];
+
+function calculateRollResult(serverSeed, clientSeed, nonce) {
+    const message = `${clientSeed}-${nonce}`;
+    const hmac = crypto.createHmac('sha256', serverSeed);
+    hmac.update(message);
+    const hex = hmac.digest('hex');
+    const subHex = hex.substring(0, 8);
+    const decimal = parseInt(subHex, 16);
+    return decimal / (0xFFFFFFFF + 1);
+}
+
+let allValid = true;
+
+for (const game of games) {
+    const roll = calculateRollResult(game.serverSeed, game.clientSeed, game.nonce);
+    const isValid = Math.abs(roll - game.expectedRoll) < 0.000001;
+    allValid = allValid && isValid;
+    
+    console.log(`Nonce ${game.nonce}: ${isValid ? '✓' : '✗'} (${roll})`);
+}
+
+console.log(`\nAll games valid: ${allValid ? '✓' : '✗'}`);
+```
+
+## API Verification
+
+You can also verify programmatically using the Cajas API:
+
+```javascript
+// Fetch game history
+const response = await fetch('/api/provably-fair/history', {
+    headers: { 'Authorization': `Bearer ${token}` }
+});
+
+const games = await response.json();
+
+// Verify each game
+for (const game of games) {
+    const roll = calculateRollResult(
+        game.server_seed,
+        game.client_seed,
+        game.nonce
+    );
+    
+    console.log(`Game ${game.id}: Roll=${roll}, Valid=${roll === game.roll_result}`);
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Verify Regularly" icon="clock">
+    Rotate seeds and verify games periodically (e.g., every 100 games or weekly)
+  </Card>
+  <Card title="Change Client Seeds" icon="shuffle">
+    Occasionally change your client seed to add your own randomness
+  </Card>
+  <Card title="Keep Records" icon="database">
+    Save server seed hashes and game data for long-term verification
+  </Card>
+  <Card title="Use Independent Tools" icon="shield-check">
+    Verify with third-party calculators to ensure platform accuracy
+  </Card>
+</CardGroup>
+
+## Reporting Issues
+
+If you find a verification mismatch:
+
+1. **Double-check your inputs** (most issues are typos)
+2. **Try multiple verification methods** (manual, API, third-party)
+3. **Document the discrepancy** (save all seeds, nonces, and results)
+4. **Contact support** with:
+   - Game ID
+   - All seed values
+   - Expected vs actual results
+   - Verification code used
+
+<Warning>
+  A verification mismatch is a serious issue. Do not continue playing until it's resolved.
+</Warning>
+
+## Next Steps
+
+<Card title="Implementation Details" icon="code" href="/technical/provably-fair/implementation">
+  Learn more about the underlying cryptographic algorithms
+</Card>

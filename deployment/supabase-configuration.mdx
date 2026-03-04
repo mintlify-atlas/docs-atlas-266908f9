@@ -1,0 +1,327 @@
+---
+title: 'Supabase Configuration'
+description: 'Set up your Supabase project and enable required services for Cajas'
+---
+
+## Overview
+
+Cajas uses Supabase as its backend platform, providing authentication, database, and Row Level Security (RLS) features. This guide walks you through creating and configuring your Supabase project.
+
+## Prerequisites
+
+- A Supabase account (sign up at [supabase.com](https://supabase.com))
+- Environment variables configured (see [Environment Setup](/deployment/environment-setup))
+
+## Create Supabase Project
+
+<Steps>
+  <Step title="Create New Project">
+    1. Log in to [Supabase Dashboard](https://app.supabase.com)
+    2. Click "New Project"
+    3. Fill in project details:
+       - **Name**: cajas-app (or your preferred name)
+       - **Database Password**: Generate a strong password and save it securely
+       - **Region**: Choose the closest region to your users
+       - **Pricing Plan**: Select Free tier for development
+
+    <Warning>
+    Save your database password securely. You'll need it for direct database access.
+    </Warning>
+  </Step>
+
+  <Step title="Wait for Provisioning">
+    Project creation takes 1-2 minutes. You'll see a progress indicator while Supabase sets up your database and services.
+  </Step>
+
+  <Step title="Get API Credentials">
+    Once ready, navigate to **Settings > API** and copy:
+
+    - **Project URL** - Your Supabase project URL
+    - **anon public key** - Public API key for client access
+
+    Add these to your `.env.local` file as described in [Environment Setup](/deployment/environment-setup).
+  </Step>
+</Steps>
+
+## Enable Required Services
+
+<Steps>
+  <Step title="Enable Authentication">
+    Cajas uses Supabase Auth for user management.
+
+    Navigate to **Authentication > Providers** and configure:
+
+    **Email Provider** (Default - Already Enabled)
+    - Confirm email: Enable for production
+    - Secure email change: Enable
+
+    <Tip>
+    For development, you can disable email confirmation to speed up testing. Re-enable it for production.
+    </Tip>
+  </Step>
+
+  <Step title="Configure Email Templates" optional>
+    Customize authentication emails:
+
+    Go to **Authentication > Email Templates** and edit:
+    - Confirm signup
+    - Reset password
+    - Magic link
+
+    Use your brand colors and messaging.
+  </Step>
+
+  <Step title="Set Site URL">
+    Configure redirect URLs for authentication:
+
+    **Authentication > URL Configuration**
+    - **Site URL**: `http://localhost:3000` (development)
+    - **Redirect URLs**: Add allowed redirect patterns
+
+    For production:
+    ```
+    Site URL: https://yourdomain.com
+    Redirect URLs: https://yourdomain.com/**
+    ```
+  </Step>
+</Steps>
+
+## Database Configuration
+
+### Required Extensions
+
+Cajas migrations automatically enable required PostgreSQL extensions:
+
+```sql
+create extension if not exists "uuid-ossp";
+```
+
+This extension is used in `supabase/migrations/20240101000000_init.sql:2` for UUID generation.
+
+### Row Level Security (RLS)
+
+All tables in Cajas use RLS for security. The migrations automatically:
+
+1. Enable RLS on all tables
+2. Create appropriate policies for each table
+3. Restrict admin actions to users with `role = 'admin'`
+
+<Info>
+RLS is automatically configured when you run migrations. See [Database Migrations](/deployment/database-migrations) for details.
+</Info>
+
+## Database Schema Overview
+
+Cajas uses the following main tables:
+
+<CardGroup cols={2}>
+  <Card title="users" icon="user">
+    User profiles with balance, username, and provably fair seeds.
+
+    **Key Fields**: `id`, `username`, `balance`, `client_seed`, `nonce`
+  </Card>
+
+  <Card title="cases" icon="box">
+    Available loot cases with pricing and metadata.
+
+    **Key Fields**: `id`, `name`, `slug`, `price`, `image_url`
+  </Card>
+
+  <Card title="case_items" icon="gift">
+    Items available in each case with drop probabilities.
+
+    **Key Fields**: `case_id`, `name`, `value`, `probability`
+  </Card>
+
+  <Card title="user_seeds" icon="key">
+    Provably fair gaming seeds per user.
+
+    **Key Fields**: `user_id`, `server_seed`, `client_seed`, `nonce`
+  </Card>
+
+  <Card title="game_rolls" icon="dice">
+    Audit log of all game rolls for fairness verification.
+
+    **Key Fields**: `user_id`, `case_id`, `roll_result`, `item_won_id`
+  </Card>
+
+  <Card title="admin_logs" icon="file-text">
+    Admin action audit trail.
+
+    **Key Fields**: `admin_id`, `action`, `details`
+  </Card>
+</CardGroup>
+
+## RLS Policy Configuration
+
+The application implements security through Row Level Security:
+
+### Public Read Access
+
+```sql
+-- Cases and items are publicly viewable
+CREATE POLICY "Cases are viewable by everyone."
+  ON public.cases FOR SELECT
+  USING ( true );
+
+CREATE POLICY "Public read case_items" 
+  ON case_items FOR SELECT 
+  USING (true);
+```
+
+From `supabase/migrations/20240101000000_init.sql:44-46` and `0000_create_cases_system.sql:41-53`.
+
+### User-Specific Access
+
+```sql
+-- Users can only view their own data
+CREATE POLICY "Users can view their own seeds"
+  ON public.user_seeds FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can view their own rolls"
+  ON public.game_rolls FOR SELECT
+  USING (auth.uid() = user_id);
+```
+
+From `supabase/migrations/20251209000000_create_provably_fair.sql:15-17`.
+
+### Admin-Only Access
+
+```sql
+-- Only admins can modify cases
+CREATE POLICY "Admins insert cases" 
+  ON cases FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+```
+
+From `supabase/migrations/0000_create_cases_system.sql:42-44`.
+
+## Testing Database Connection
+
+<Steps>
+  <Step title="Install Supabase CLI" optional>
+    For local development with Supabase:
+
+    ```bash
+    npm install -g supabase
+    ```
+  </Step>
+
+  <Step title="Test Connection">
+    Create a test file to verify your connection:
+
+    ```typescript test-connection.ts
+    import { createClient } from '@supabase/supabase-js'
+
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+
+    async function testConnection() {
+      const { data, error } = await supabase
+        .from('cases')
+        .select('count')
+      
+      if (error) {
+        console.error('Connection failed:', error)
+      } else {
+        console.log('✅ Connected successfully!')
+      }
+    }
+
+    testConnection()
+    ```
+
+    Run with: `npx tsx test-connection.ts`
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Connection timeout">
+    **Symptoms**: Requests hang or timeout
+
+    **Solutions**:
+    - Verify your project is not paused (Free tier pauses after inactivity)
+    - Check your internet connection
+    - Confirm the project URL is correct in `.env.local`
+    - Try restarting your Supabase project from the dashboard
+  </Accordion>
+
+  <Accordion title="Invalid JWT / Auth errors">
+    **Symptoms**: `Invalid JWT` or authentication errors
+
+    **Solutions**:
+    - Clear browser cookies and local storage
+    - Verify you're using the `anon` key, not the `service_role` key
+    - Check that RLS policies are correctly configured
+    - Ensure the JWT secret hasn't been rotated
+  </Accordion>
+
+  <Accordion title="RLS policy violations">
+    **Symptoms**: `new row violates row-level security policy`
+
+    **Solutions**:
+    - Check that the user is authenticated: `auth.uid()` should return a value
+    - Verify the user has the correct role (e.g., `admin` for admin operations)
+    - Review policy conditions in your migration files
+    - Test policies in Supabase SQL Editor
+  </Accordion>
+
+  <Accordion title="Migration conflicts">
+    **Symptoms**: Errors when running migrations
+
+    **Solutions**:
+    - Check if tables already exist from previous migrations
+    - Review migration order (files are run alphabetically)
+    - Use `IF NOT EXISTS` clauses in CREATE statements
+    - See [Database Migrations](/deployment/database-migrations) for details
+  </Accordion>
+</AccordionGroup>
+
+## Performance Optimization
+
+<CardGroup cols={2}>
+  <Card title="Connection Pooling" icon="network-wired">
+    Supabase automatically handles connection pooling. Use the provided client helpers (`lib/supabase/client.ts` and `lib/supabase/server.ts`) for optimal performance.
+  </Card>
+
+  <Card title="Indexes" icon="bolt">
+    Add indexes for frequently queried columns:
+    ```sql
+    CREATE INDEX idx_case_items_case_id ON case_items(case_id);
+    CREATE INDEX idx_game_rolls_user_id ON game_rolls(user_id);
+    ```
+  </Card>
+
+  <Card title="Caching" icon="database">
+    Use `@supabase/ssr` for automatic cookie-based caching in Next.js (already configured).
+  </Card>
+
+  <Card title="Query Optimization" icon="chart-line">
+    Select only needed columns:
+    ```typescript
+    // ✅ Good
+    .select('id, name, price')
+    
+    // ❌ Avoid
+    .select('*')
+    ```
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Migrations" icon="code-branch" href="/deployment/database-migrations">
+    Run migrations to set up your database schema
+  </Card>
+
+  <Card title="Authentication Setup" icon="shield" href="/features/authentication">
+    Configure user authentication and authorization
+  </Card>
+</CardGroup>

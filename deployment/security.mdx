@@ -1,0 +1,682 @@
+---
+title: 'Security Best Practices'
+description: 'Comprehensive security guide including RLS policies, API protection, secrets management, and authentication best practices for production'
+---
+
+## Overview
+
+Security is critical for a gambling application handling user funds and sensitive data. This guide covers all security layers in Cajas, from database-level Row Level Security (RLS) to API protection and secrets management.
+
+<Warning>
+  **Production Security**: Never deploy to production without implementing all security measures outlined in this guide. A single misconfiguration can lead to data breaches or unauthorized access.
+</Warning>
+
+## Row Level Security (RLS)
+
+### Understanding RLS
+
+Row Level Security ensures users can only access data they're authorized to see. Every database table in Cajas has RLS enabled and enforced through PostgreSQL policies.
+
+<Info>
+  RLS policies are defined in `supabase/migrations/20240101000000_init.sql:16-128`
+</Info>
+
+### RLS Policies by Table
+
+<AccordionGroup>
+  <Accordion title="users - Public Profiles" icon="user">
+    **Table**: `public.users`
+    
+    **Security Model**: Public read, authenticated write
+    
+    ```sql
+    -- Enable RLS
+    alter table public.users enable row level security;
+    
+    -- Anyone can view profiles
+    create policy "Public profiles are viewable by everyone."
+      on public.users for select
+      using ( true );
+    
+    -- Users can insert their own profile
+    create policy "Users can insert their own profile."
+      on public.users for insert
+      with check ( auth.uid() = id );
+    
+    -- Users can update own profile
+    create policy "Users can update own profile."
+      on public.users for update
+      using ( auth.uid() = id );
+    ```
+    
+    **Security Implications**:
+    - Usernames and avatars are public (for leaderboards, chat)
+    - Balance is visible but cannot be modified by users
+    - Only authenticated users can create/update their profile
+  </Accordion>
+  
+  <Accordion title="cases - Game Catalog" icon="box">
+    **Table**: `public.cases`
+    
+    **Security Model**: Public read-only
+    
+    ```sql
+    alter table public.cases enable row level security;
+    
+    create policy "Cases are viewable by everyone."
+      on public.cases for select
+      using ( true );
+    ```
+    
+    **Security Implications**:
+    - All users can browse available cases
+    - No write access through RLS (admin-only via service role)
+    - Case prices and items are public information
+  </Accordion>
+  
+  <Accordion title="items - Prize Pool" icon="gem">
+    **Table**: `public.items`
+    
+    **Security Model**: Public read-only
+    
+    ```sql
+    alter table public.items enable row level security;
+    
+    create policy "Items are viewable by everyone."
+      on public.items for select
+      using ( true );
+    ```
+    
+    **Security Implications**:
+    - Item rarities and values are transparent
+    - No write access through standard authentication
+    - Ensures provably fair odds are verifiable
+  </Accordion>
+  
+  <Accordion title="user_items - Inventory" icon="backpack">
+    **Table**: `public.user_items`
+    
+    **Security Model**: Private, user-scoped
+    
+    ```sql
+    alter table public.user_items enable row level security;
+    
+    create policy "Users can view own items."
+      on public.user_items for select
+      using ( auth.uid() = user_id );
+    ```
+    
+    **Security Implications**:
+    - Users can ONLY see their own inventory
+    - Prevents inventory snooping
+    - No write access (items added via API routes with validation)
+  </Accordion>
+  
+  <Accordion title="transactions - Financial Records" icon="money-bill">
+    **Table**: `public.transactions`
+    
+    **Security Model**: Private, user-scoped
+    
+    ```sql
+    alter table public.transactions enable row level security;
+    
+    create policy "Users can view own transactions."
+      on public.transactions for select
+      using ( auth.uid() = user_id );
+    ```
+    
+    **Security Implications**:
+    - Complete financial privacy
+    - Users cannot see others' transaction history
+    - Immutable audit trail (no update/delete policies)
+  </Accordion>
+  
+  <Accordion title="user_seeds - Provably Fair Data" icon="dice">
+    **Table**: `public.user_seeds`
+    
+    **Security Model**: Private, user-scoped
+    
+    ```sql
+    alter table public.user_seeds enable row level security;
+    
+    create policy "Users can view their own seeds"
+      on public.user_seeds for select
+      using (auth.uid() = user_id);
+    
+    create policy "Users can update their own seeds"
+      on public.user_seeds for update
+      using (auth.uid() = user_id);
+    
+    create policy "Users can insert their own seeds"
+      on public.user_seeds for insert
+      with check (auth.uid() = user_id);
+    ```
+    
+    **Security Implications**:
+    - Server seed remains secret until revealed
+    - Users can update client seed for fairness
+    - Nonce prevents replay attacks
+  </Accordion>
+  
+  <Accordion title="game_rolls - Game Audit Log" icon="scroll">
+    **Table**: `public.game_rolls`
+    
+    **Security Model**: Private, user-scoped read-only
+    
+    ```sql
+    alter table public.game_rolls enable row level security;
+    
+    create policy "Users can view their own rolls"
+      on public.game_rolls for select
+      using (auth.uid() = user_id);
+    ```
+    
+    **Security Implications**:
+    - Complete game history for verification
+    - Immutable record (no update/delete)
+    - Enables provably fair verification
+  </Accordion>
+</AccordionGroup>
+
+### Testing RLS Policies
+
+Verify RLS policies are working correctly:
+
+<CodeGroup>
+```sql Test User Isolation
+-- Connect as User A
+SET request.jwt.claims = '{"sub": "user-a-uuid"}';
+
+-- Should only return User A's items
+SELECT * FROM user_items;
+
+-- Should return nothing (User B's items)
+SELECT * FROM user_items WHERE user_id = 'user-b-uuid';
+```
+
+```sql Test Public Access
+-- No authentication
+RESET request.jwt.claims;
+
+-- Should work (public read)
+SELECT * FROM cases;
+SELECT * FROM items;
+
+-- Should fail (protected)
+SELECT * FROM user_items;
+SELECT * FROM transactions;
+```
+
+```typescript Test via API
+// Test authenticated access
+const { data: myItems } = await supabase
+  .from('user_items')
+  .select('*');
+
+console.log(myItems); // Only your items
+
+// Test public access
+const { data: cases } = await supabase
+  .from('cases')
+  .select('*');
+
+console.log(cases); // All cases
+```
+</CodeGroup>
+
+## API Route Security
+
+### Authentication Middleware
+
+All API routes must verify user authentication:
+
+```typescript app/api/cases/open/route.ts:5-11
+export async function POST(request: Request) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    
+    // Continue with authenticated logic...
+}
+```
+
+<Warning>
+  **Critical**: ALWAYS verify authentication before processing sensitive operations. Never trust client-side data.
+</Warning>
+
+### Input Validation
+
+Validate all user inputs to prevent injection attacks:
+
+<CodeGroup>
+```typescript Validate UUIDs
+import { z } from 'zod';
+
+const openCaseSchema = z.object({
+  caseId: z.string().uuid(),
+  clientSeed: z.string().min(1).max(256).optional()
+});
+
+export async function POST(request: Request) {
+  // ... auth check ...
+  
+  const body = await request.json();
+  const validated = openCaseSchema.safeParse(body);
+  
+  if (!validated.success) {
+    return NextResponse.json(
+      { error: 'Invalid input', details: validated.error },
+      { status: 400 }
+    );
+  }
+  
+  const { caseId, clientSeed } = validated.data;
+  // ... continue ...
+}
+```
+
+```typescript Validate Numbers
+const depositSchema = z.object({
+  amount: z.number()
+    .positive('Amount must be positive')
+    .max(10000, 'Maximum deposit is $10,000')
+    .multipleOf(0.01, 'Invalid decimal precision')
+});
+```
+
+```typescript Sanitize Strings
+const updateProfileSchema = z.object({
+  username: z.string()
+    .min(3, 'Username too short')
+    .max(20, 'Username too long')
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Invalid characters')
+    .transform(s => s.trim().toLowerCase())
+});
+```
+</CodeGroup>
+
+### Rate Limiting
+
+Protect API routes from abuse:
+
+```typescript middleware.ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+// Simple in-memory rate limiter (use Redis in production)
+const rateLimit = new Map<string, { count: number; resetTime: number }>();
+
+export function middleware(request: NextRequest) {
+  // Skip rate limiting for static files
+  if (request.nextUrl.pathname.startsWith('/api/')) {
+    const ip = request.ip ?? 'unknown';
+    const now = Date.now();
+    const windowMs = 60 * 1000; // 1 minute
+    const maxRequests = 100;
+    
+    const record = rateLimit.get(ip);
+    
+    if (!record || now > record.resetTime) {
+      rateLimit.set(ip, { count: 1, resetTime: now + windowMs });
+    } else if (record.count >= maxRequests) {
+      return NextResponse.json(
+        { error: 'Too many requests' },
+        { status: 429 }
+      );
+    } else {
+      record.count++;
+    }
+  }
+  
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: '/api/:path*'
+};
+```
+
+<Info>
+  For production, use [Vercel's Edge Config](https://vercel.com/docs/storage/edge-config) or [Upstash Redis](https://upstash.com/) for distributed rate limiting.
+</Info>
+
+## Secrets Management
+
+### Environment Variable Security
+
+<CardGroup cols={2}>
+  <Card title="Public Variables" icon="globe" color="#00ff00">
+    Safe to expose in client-side code:
+    - `NEXT_PUBLIC_SUPABASE_URL`
+    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+    
+    Protected by RLS policies
+  </Card>
+  
+  <Card title="Secret Variables" icon="lock" color="#ff0000">
+    NEVER expose to client:
+    - `SUPABASE_SERVICE_ROLE_KEY`
+    - Payment processor keys
+    - API secrets
+    
+    Server-side only
+  </Card>
+</CardGroup>
+
+### Vercel Environment Variables
+
+Store secrets securely in Vercel:
+
+<Steps>
+  <Step title="Add Secrets">
+    ```bash
+    # Add via CLI (recommended)
+    vercel env add SUPABASE_SERVICE_ROLE_KEY production
+    
+    # Or via dashboard:
+    # Settings → Environment Variables → Add New
+    ```
+  </Step>
+  
+  <Step title="Scope Correctly">
+    - **Production**: Live environment only
+    - **Preview**: PR deployments (use test keys)
+    - **Development**: Local development
+  </Step>
+  
+  <Step title="Encrypt Sensitive Data">
+    For extra security, encrypt sensitive environment variables:
+    ```typescript
+    import { createCipheriv, createDecipheriv } from 'crypto';
+    
+    function encryptSecret(text: string, key: string) {
+      const cipher = createCipheriv('aes-256-cbc', key, iv);
+      return cipher.update(text, 'utf8', 'hex') + cipher.final('hex');
+    }
+    ```
+  </Step>
+</Steps>
+
+### Secret Rotation
+
+Rotate secrets regularly:
+
+<AccordionGroup>
+  <Accordion title="Supabase Keys" icon="key">
+    1. Generate new anon key in Supabase dashboard
+    2. Update `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel
+    3. Deploy new version
+    4. Revoke old key after 24 hours
+  </Accordion>
+  
+  <Accordion title="Service Role Key" icon="key-skeleton">
+    1. Generate new service role key
+    2. Update `SUPABASE_SERVICE_ROLE_KEY`
+    3. Test API routes
+    4. Deploy to production
+    5. Revoke old key immediately
+  </Accordion>
+  
+  <Accordion title="User Passwords" icon="user-lock">
+    Enforce password rotation policy:
+    ```typescript
+    // Check password age
+    const passwordAge = Date.now() - user.password_updated_at;
+    const maxAge = 90 * 24 * 60 * 60 * 1000; // 90 days
+    
+    if (passwordAge > maxAge) {
+      return NextResponse.json(
+        { error: 'Password expired, please reset' },
+        { status: 403 }
+      );
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Authentication Security
+
+### Supabase Auth Configuration
+
+Configure secure authentication settings:
+
+<Tabs>
+  <Tab title="Password Policy">
+    Enforce strong passwords in Supabase dashboard:
+    
+    1. Go to **Authentication** → **Settings**
+    2. Configure password requirements:
+       - Minimum length: 12 characters
+       - Require uppercase
+       - Require numbers
+       - Require special characters
+    3. Enable password breach detection
+  </Tab>
+  
+  <Tab title="Session Management">
+    Configure session security:
+    
+    ```typescript
+    // JWT expiration
+    JWT_EXPIRY=3600 // 1 hour
+    
+    // Refresh token expiration
+    REFRESH_TOKEN_EXPIRY=604800 // 7 days
+    
+    // Reuse interval (prevents token replay)
+    REFRESH_TOKEN_REUSE_INTERVAL=10 // seconds
+    ```
+  </Tab>
+  
+  <Tab title="OAuth Providers">
+    Secure OAuth configuration:
+    
+    1. **Google OAuth**:
+       - Enable only necessary scopes
+       - Validate email domain if needed
+       - Store minimal user data
+    
+    2. **Discord OAuth**:
+       - Request only `identify` and `email`
+       - Verify email is confirmed
+       - Link to existing accounts carefully
+  </Tab>
+</Tabs>
+
+### Cookie Security
+
+Supabase auth cookies are configured securely:
+
+```typescript lib/supabase/server.ts:11-25
+cookies: {
+    getAll() {
+        return cookieStore.getAll()
+    },
+    setAll(cookiesToSet) {
+        try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+                cookieStore.set(name, value, options)
+            )
+        } catch {
+            // Ignored in Server Components
+        }
+    },
+}
+```
+
+<Info>
+  Supabase automatically sets secure cookie flags:
+  - `HttpOnly`: Prevents JavaScript access
+  - `Secure`: HTTPS only
+  - `SameSite=Lax`: CSRF protection
+</Info>
+
+## CORS and CSRF Protection
+
+### CORS Configuration
+
+Next.js API routes are same-origin by default. For external API access:
+
+```typescript middleware.ts
+export function middleware(request: NextRequest) {
+  // Allow specific origins
+  const allowedOrigins = [
+    'https://cajas.club',
+    'https://www.cajas.club'
+  ];
+  
+  const origin = request.headers.get('origin');
+  
+  if (origin && !allowedOrigins.includes(origin)) {
+    return NextResponse.json(
+      { error: 'CORS not allowed' },
+      { status: 403 }
+    );
+  }
+  
+  const response = NextResponse.next();
+  
+  if (origin) {
+    response.headers.set('Access-Control-Allow-Origin', origin);
+    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
+  
+  return response;
+}
+```
+
+### CSRF Protection
+
+Supabase auth provides CSRF protection automatically. For additional API routes:
+
+```typescript
+import { cookies } from 'next/headers';
+
+export async function POST(request: Request) {
+  const cookieStore = await cookies();
+  const csrfToken = request.headers.get('X-CSRF-Token');
+  const storedToken = cookieStore.get('csrf-token')?.value;
+  
+  if (csrfToken !== storedToken) {
+    return NextResponse.json(
+      { error: 'Invalid CSRF token' },
+      { status: 403 }
+    );
+  }
+  
+  // Process request...
+}
+```
+
+## Security Headers
+
+Configure security headers in `vercel.json`:
+
+```json vercel.json
+{
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000; includeSubDomains; preload"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co"
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Security Checklist
+
+Before deploying to production:
+
+<Steps>
+  <Step title="Database Security">
+    - [ ] RLS enabled on all tables
+    - [ ] Policies tested for user isolation
+    - [ ] Service role key secured
+    - [ ] Migrations reviewed
+  </Step>
+  
+  <Step title="API Security">
+    - [ ] Authentication verified on all routes
+    - [ ] Input validation implemented
+    - [ ] Rate limiting configured
+    - [ ] Error messages don't leak info
+  </Step>
+  
+  <Step title="Secrets Management">
+    - [ ] No secrets in code/git
+    - [ ] Environment variables configured
+    - [ ] Production keys rotated
+    - [ ] Service accounts use least privilege
+  </Step>
+  
+  <Step title="Client Security">
+    - [ ] CSP headers configured
+    - [ ] XSS protection enabled
+    - [ ] HTTPS enforced
+    - [ ] Secure cookies enabled
+  </Step>
+  
+  <Step title="Monitoring">
+    - [ ] Error tracking configured
+    - [ ] Audit logs enabled
+    - [ ] Alerts set up
+    - [ ] Regular security reviews scheduled
+  </Step>
+</Steps>
+
+<Check>
+  **Security is an ongoing process**. Regularly review logs, update dependencies, and stay informed about security best practices.
+</Check>
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="Supabase Security" icon="shield" href="https://supabase.com/docs/guides/auth/row-level-security">
+    Official RLS documentation
+  </Card>
+  
+  <Card title="Next.js Security" icon="shield-check" href="https://nextjs.org/docs/app/building-your-application/configuring/security">
+    Next.js security best practices
+  </Card>
+  
+  <Card title="OWASP Top 10" icon="list" href="https://owasp.org/www-project-top-ten/">
+    Common web vulnerabilities
+  </Card>
+  
+  <Card title="Monitoring Setup" icon="chart-line" href="/deployment/monitoring">
+    Configure security monitoring
+  </Card>
+</CardGroup>

@@ -1,0 +1,564 @@
+---
+title: Authentication System
+description: Supabase authentication implementation, Row Level Security policies, and user management
+---
+
+## Overview
+
+Cajas uses Supabase Auth (powered by GoTrue) for user authentication and authorization. The system implements email/password authentication with automatic profile creation and comprehensive Row Level Security (RLS) policies.
+
+## Authentication Flow
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     User Registration                   │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│  1. User submits email, password, and full name         │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│  2. Supabase Auth creates record in auth.users          │
+│     - Hashes password with bcrypt                       │
+│     - Stores metadata (full_name, avatar_url)           │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│  3. Database trigger fires: on_auth_user_created        │
+│     - Automatically creates public.users record         │
+│     - Copies metadata to public fields                  │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│  4. Session token issued and stored in cookies          │
+│     - Access token (JWT)                                │
+│     - Refresh token                                     │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│  5. User redirected to home page, authenticated         │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Implementation
+
+### Signup Action
+
+The signup process creates a new user with metadata that triggers profile creation.
+
+```typescript title="app/login/actions.ts"
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
+export async function signup(formData: FormData) {
+  const supabase = await createClient()
+
+  const email = formData.get('email') as string
+  const password = formData.get('password') as string
+  const fullName = formData.get('fullName') as string
+
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        full_name: fullName,
+        // Generate default avatar using DiceBear API
+        avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
+      },
+    },
+  })
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  redirect('/')
+}
+```
+
+### Login Action
+
+Login uses email/password authentication with session cookie management.
+
+```typescript title="app/login/actions.ts"
+export async function login(formData: FormData) {
+  const supabase = await createClient()
+
+  const email = formData.get('email') as string
+  const password = formData.get('password') as string
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  })
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  revalidatePath('/', 'layout')
+  redirect('/')
+}
+```
+
+### Signout Action
+
+```typescript title="app/login/actions.ts"
+export async function signout() {
+  const supabase = await createClient()
+  await supabase.auth.signOut()
+  revalidatePath('/', 'layout')
+  redirect('/')
+}
+```
+
+### OAuth Callback Handler
+
+Handles the OAuth callback after authentication providers redirect back to the app.
+
+```typescript title="app/auth/callback/route.ts"
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+
+export async function GET(request: Request) {
+  const { searchParams, origin } = new URL(request.url)
+  const code = searchParams.get('code')
+  const next = searchParams.get('next') ?? '/'
+
+  if (code) {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    
+    if (!error) {
+      const forwardedHost = request.headers.get('x-forwarded-host')
+      const isLocalEnv = process.env.NODE_ENV === 'development'
+      
+      if (isLocalEnv) {
+        return NextResponse.redirect(`${origin}${next}`)
+      } else if (forwardedHost) {
+        return NextResponse.redirect(`https://${forwardedHost}${next}`)
+      } else {
+        return NextResponse.redirect(`${origin}${next}`)
+      }
+    }
+  }
+
+  return NextResponse.redirect(`${origin}/auth/auth-code-error`)
+}
+```
+
+## Supabase Client Setup
+
+### Server-Side Client
+
+For use in Server Components, API routes, and Server Actions.
+
+```typescript title="lib/supabase/server.ts"
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+export async function createClient() {
+  const cookieStore = await cookies()
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // The `setAll` method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing
+            // user sessions.
+          }
+        },
+      },
+    }
+  )
+}
+```
+
+### Client-Side Client
+
+For use in Client Components with the `'use client'` directive.
+
+```typescript title="lib/supabase/client.ts"
+import { createBrowserClient } from '@supabase/ssr'
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}
+```
+
+## Automatic Profile Creation
+
+A PostgreSQL trigger automatically creates user profiles when a new auth user is created.
+
+```sql title="supabase/migrations/20240101000000_init.sql"
+-- Function to handle new user creation
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.users (id, username, avatar_url)
+  VALUES (
+    new.id,
+    new.raw_user_meta_data ->> 'full_name',
+    new.raw_user_meta_data ->> 'avatar_url'
+  );
+  RETURN new;
+END;
+$$;
+
+-- Trigger for new user
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+```
+
+## Row Level Security (RLS) Policies
+
+All tables have RLS enabled to ensure users can only access their own data or public data.
+
+### Users Table Policies
+
+```sql
+-- Users table
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
+-- Everyone can view public profiles
+CREATE POLICY "Public profiles are viewable by everyone."
+  ON public.users FOR SELECT
+  USING ( true );
+
+-- Users can insert their own profile
+CREATE POLICY "Users can insert their own profile."
+  ON public.users FOR INSERT
+  WITH CHECK ( auth.uid() = id );
+
+-- Users can update their own profile
+CREATE POLICY "Users can update own profile."
+  ON public.users FOR UPDATE
+  USING ( auth.uid() = id );
+```
+
+### Cases Table Policies
+
+```sql
+-- Cases table
+ALTER TABLE public.cases ENABLE ROW LEVEL SECURITY;
+
+-- Everyone can view cases
+CREATE POLICY "Public read cases" 
+  ON cases FOR SELECT 
+  USING (true);
+
+-- Only admins can insert cases
+CREATE POLICY "Admins insert cases" 
+  ON cases FOR INSERT 
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+-- Only admins can update cases
+CREATE POLICY "Admins update cases" 
+  ON cases FOR UPDATE 
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+-- Only admins can delete cases
+CREATE POLICY "Admins delete cases" 
+  ON cases FOR DELETE 
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+```
+
+### Case Items Table Policies
+
+```sql
+-- Case items table
+ALTER TABLE public.case_items ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public read case_items" 
+  ON case_items FOR SELECT 
+  USING (true);
+
+CREATE POLICY "Admins insert case_items" 
+  ON case_items FOR INSERT 
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+CREATE POLICY "Admins update case_items" 
+  ON case_items FOR UPDATE 
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+CREATE POLICY "Admins delete case_items" 
+  ON case_items FOR DELETE 
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+```
+
+### User Items Table Policies
+
+```sql
+-- User items (inventory)
+ALTER TABLE public.user_items ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own items."
+  ON public.user_items FOR SELECT
+  USING ( auth.uid() = user_id );
+```
+
+### Transactions Table Policies
+
+```sql
+-- Transactions
+ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own transactions."
+  ON public.transactions FOR SELECT
+  USING ( auth.uid() = user_id );
+```
+
+### User Seeds Table Policies
+
+```sql
+-- User seeds (provably fair)
+ALTER TABLE public.user_seeds ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own seeds"
+  ON public.user_seeds FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own seeds"
+  ON public.user_seeds FOR UPDATE
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own seeds"
+  ON public.user_seeds FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+```
+
+### Game Rolls Table Policies
+
+```sql
+-- Game rolls (audit log)
+ALTER TABLE public.game_rolls ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own rolls"
+  ON public.game_rolls FOR SELECT
+  USING (auth.uid() = user_id);
+```
+
+### Admin Logs Table Policies
+
+```sql
+-- Admin logs
+ALTER TABLE public.admin_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Admins view logs" 
+  ON admin_logs FOR SELECT 
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+CREATE POLICY "Admins insert logs" 
+  ON admin_logs FOR INSERT 
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+```
+
+## User Management
+
+### Checking Authentication Status
+
+```typescript
+// In Server Component
+const supabase = await createClient()
+const { data: { user } } = await supabase.auth.getUser()
+
+if (!user) {
+  redirect('/login')
+}
+```
+
+```typescript
+// In API Route
+export async function POST(request: Request) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Proceed with authenticated logic
+}
+```
+
+### Accessing User Profile
+
+```typescript
+const supabase = await createClient()
+const { data: { user } } = await supabase.auth.getUser()
+
+if (user) {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('avatar_url, role')
+    .eq('id', user.id)
+    .single()
+
+  // Merge profile data into user metadata
+  if (profile) {
+    if (profile.avatar_url) {
+      user.user_metadata.avatar_url = profile.avatar_url
+    }
+    if (profile.role) {
+      user.user_metadata.role = profile.role
+    }
+  }
+}
+```
+
+### Checking Admin Role
+
+```typescript
+const { data: profile } = await supabase
+  .from('profiles')
+  .select('role')
+  .eq('id', user.id)
+  .single()
+
+const isAdmin = profile?.role === 'admin'
+
+if (!isAdmin) {
+  return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+}
+```
+
+## Session Management
+
+### Session Cookies
+
+Supabase uses httpOnly cookies to store session tokens:
+
+- **sb-{project-ref}-auth-token**: Access token (JWT)
+- **sb-{project-ref}-auth-token.{index}**: Additional token chunks if needed
+
+Cookies are:
+- HttpOnly (not accessible via JavaScript)
+- Secure (HTTPS only in production)
+- SameSite=Lax (CSRF protection)
+
+### Token Refresh
+
+Tokens are automatically refreshed by the Supabase client when they expire. The refresh token is used to obtain a new access token without requiring the user to log in again.
+
+### Session Duration
+
+Default session duration is 3600 seconds (1 hour) for the access token. Refresh tokens are valid for longer periods and are rotated on each refresh.
+
+## Security Best Practices
+
+### Environment Variables
+
+Store Supabase credentials in environment variables:
+
+```bash title=".env.local"
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+The anon key is safe to expose publicly as it only has access to data allowed by RLS policies.
+
+### RLS Policy Design
+
+- Always enable RLS on tables containing user data
+- Use `auth.uid()` to reference the current authenticated user
+- Write specific policies for SELECT, INSERT, UPDATE, DELETE
+- Test policies thoroughly with different user roles
+
+### Password Requirements
+
+Supabase Auth enforces:
+- Minimum 6 characters
+- Passwords are hashed with bcrypt before storage
+- Rate limiting on auth endpoints
+
+### Admin Protection
+
+Admin actions are protected at multiple levels:
+
+1. **Database RLS policies** - Check `profiles.role = 'admin'`
+2. **Application logic** - Verify role before rendering admin UI
+3. **API routes** - Validate admin status before executing actions
+
+```typescript
+// Example admin check in API route
+const { data: profile } = await supabase
+  .from('profiles')
+  .select('role')
+  .eq('id', user.id)
+  .single()
+
+if (profile?.role !== 'admin') {
+  return NextResponse.json(
+    { error: 'Unauthorized: Admin access required' },
+    { status: 403 }
+  )
+}
+```
+
+## Related Documentation
+
+- [System Architecture](/technical/overview) - Overall system design
+- [Database Schema](/technical/database-schema) - Complete database structure
+- [API Reference](/api/overview) - API endpoints and authentication

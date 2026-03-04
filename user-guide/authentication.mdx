@@ -1,0 +1,199 @@
+---
+title: 'Authentication & Profile'
+description: 'Learn how to sign up, log in, and manage your Cajas account'
+icon: 'user-circle'
+---
+
+## Creating Your Account
+
+Get started with Cajas by creating your account in just a few clicks.
+
+<Steps>
+  <Step title="Access the Auth Modal">
+    Click the **"Iniciar Sesión"** button in the top navigation bar. This will open the authentication modal.
+    
+    The modal displays two options:
+    - **Bienvenido de nuevo** - For existing users (Login)
+    - **Crear cuenta** - For new users (Sign up)
+  </Step>
+
+  <Step title="Choose Sign Up Method">
+    You have two ways to create your account:
+
+    ### Google OAuth (Recommended)
+    Click the **"Continuar con Google"** button with the Google logo. This will:
+    - Redirect you to Google's secure login
+    - Automatically create your profile
+    - Generate a unique avatar based on your email
+
+    ### Email & Password
+    Alternatively, fill in the form with:
+    - **Nombre Completo** (Full Name) - Your display name
+    - **Email** - Your email address
+    - **Contraseña** (Password) - A secure password
+
+    Then click **"Registrarse"** to create your account.
+  </Step>
+
+  <Step title="Automatic Profile Creation">
+    Upon successful registration:
+    - Your profile is automatically created in the database
+    - You receive a starting balance of $0
+    - An avatar is generated using DiceBear API
+    - Your session begins immediately
+  </Step>
+</Steps>
+
+<Note>
+  Your avatar URL follows this pattern: `https://api.dicebear.com/7.x/avataaars/svg?seed={your-email}`
+  
+  You can customize your avatar later in the profile settings.
+</Note>
+
+## Logging In
+
+Returning users can quickly access their accounts.
+
+<Steps>
+  <Step title="Open Login Modal">
+    Click **"Iniciar Sesión"** in the navigation bar.
+  </Step>
+
+  <Step title="Switch to Login View">
+    If you see the signup form, click **"Inicia Sesión"** at the bottom of the modal to switch views.
+    
+    The heading will change to **"Bienvenido de nuevo"** (Welcome back).
+  </Step>
+
+  <Step title="Enter Credentials">
+    Choose your login method:
+
+    ### Google OAuth
+    Click **"Continuar con Google"** and authenticate through Google.
+
+    ### Email & Password
+    Enter your registered email and password, then click **"Iniciar Sesión"**.
+  </Step>
+
+  <Step title="Authentication Complete">
+    On successful login:
+    - The modal closes automatically
+    - Your session is established
+    - You'll see your balance in the navbar
+    - The page refreshes to show authenticated content
+  </Step>
+</Steps>
+
+<Warning>
+  If authentication fails, an error message appears in a red banner above the submit button. Common errors include:
+  - Invalid email or password
+  - Email not verified
+  - Network connectivity issues
+</Warning>
+
+## Managing Your Profile
+
+Customize your account information and preferences.
+
+### Accessing Profile Settings
+
+Navigate to `/profile` or:
+1. Click your avatar in the top-right corner of the navbar
+2. From the dropdown menu, select your profile option
+
+### Profile Information You Can Edit
+
+The profile page (`/profile`) displays a form with these fields:
+
+<Tabs>
+  <Tab title="Personal Info">
+    - **Nombre** (Full Name) - Your display name across the platform
+    - **DNI** - National identification number (for compliance)
+    - **Número de teléfono** (Phone Number) - Contact number in format `+54 9 11 1234-5678`
+    - **Correo electrónico** (Email) - Read-only, cannot be changed after registration
+  </Tab>
+
+  <Tab title="Shipping Address">
+    - **Dirección de envío** (Shipping Address) - Multi-line text field for:
+      - Street and number
+      - City
+      - Province
+      - Zip code
+    
+    This is required for physical item withdrawals.
+  </Tab>
+
+  <Tab title="Avatar">
+    Click the avatar circle in the top-right of the profile form:
+    - A camera icon appears on hover
+    - Click to upload a new image
+    - Images are automatically resized to 200x200px
+    - Stored in Supabase Storage under `avatars/{user-id}/avatar.{ext}`
+    
+    A loading spinner displays during upload.
+  </Tab>
+</Tabs>
+
+### Saving Changes
+
+<Steps>
+  <Step title="Edit Your Information">
+    Update any of the editable fields in the profile form.
+  </Step>
+
+  <Step title="Click Save">
+    Click the **"Guardar Cambios"** (Save Changes) button at the bottom-right.
+    
+    The button shows a loading spinner while saving.
+  </Step>
+
+  <Step title="Confirmation">
+    A success message appears in a green banner: **"Profile updated successfully!"**
+    
+    Your changes are now saved to the `profiles` table in the database.
+  </Step>
+</Steps>
+
+<Note>
+  Profile updates also sync to your auth metadata to keep your full name consistent across sessions.
+</Note>
+
+## Logging Out
+
+To end your session:
+
+1. Click your avatar/profile dropdown in the navbar
+2. Scroll to the bottom of the dropdown menu
+3. Click the red **"Cerrar Sesión"** (Log Out) button
+4. You'll be redirected to the home page as a guest
+
+<Warning>
+  Make sure to log out when using shared or public computers to protect your account.
+</Warning>
+
+## Account Security
+
+### Session Management
+
+- Sessions are managed by Supabase Auth
+- OAuth redirects use the callback pattern: `{origin}/auth/callback`
+- Authenticated state persists across page refreshes
+
+### Protected Routes
+
+Some features require authentication:
+- Opening cases (redirects to auth modal)
+- Viewing wallet and transactions
+- Accessing profile settings
+- Managing inventory
+
+### Password Requirements
+
+When creating an account with email:
+- Minimum 6 characters recommended
+- Use a unique password not shared with other sites
+- Consider using a password manager
+
+<Tip>
+  Google OAuth is the fastest and most secure sign-up method, as it uses Google's authentication infrastructure.
+</Tip>

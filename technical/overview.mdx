@@ -1,0 +1,274 @@
+---
+title: System Architecture Overview
+description: Comprehensive overview of Cajas technical architecture, tech stack, and folder structure
+---
+
+## Overview
+
+Cajas is a modern case-opening platform built with Next.js 16, Supabase, and TypeScript. The application provides a provably fair gaming experience where users can open cases to win virtual items.
+
+## Tech Stack
+
+### Frontend
+
+- **Next.js 16.0.6** - React framework with App Router
+- **React 19.2.1** - UI library with React Compiler enabled
+- **TypeScript 5** - Type safety and developer experience
+- **Tailwind CSS 4** - Utility-first CSS framework
+- **Framer Motion 12** - Animation library for smooth transitions
+- **Lucide React** - Icon library
+
+### Backend & Database
+
+- **Supabase** - Backend-as-a-Service providing:
+  - PostgreSQL database with Row Level Security (RLS)
+  - Authentication and user management
+  - Real-time subscriptions
+  - RESTful API with auto-generated types
+- **@supabase/supabase-js 2.86.0** - JavaScript client
+- **@supabase/ssr 0.8.0** - Server-side rendering utilities
+
+### Form & Validation
+
+- **React Hook Form 7.68.0** - Form state management
+- **Zod 4.1.13** - Schema validation
+- **@hookform/resolvers** - Integration between form and validation
+
+### Styling & UI
+
+- **clsx** - Conditional className utility
+- **tailwind-merge** - Merge Tailwind classes efficiently
+- **Custom theme** - Yellow primary (#FACC15) and gray secondary (#1F2937)
+- **Bai Jamjuree font** - Custom Google Font
+
+## Architecture Patterns
+
+### Application Structure
+
+Cajas follows Next.js 16 App Router conventions with a clear separation of concerns:
+
+```
+Cajas Architecture
+┌─────────────────────────────────────────┐
+│           Client Browser                │
+│  ┌───────────────────────────────────┐  │
+│  │   Next.js App (React 19)          │  │
+│  │   - Server Components             │  │
+│  │   - Client Components             │  │
+│  │   - Server Actions                │  │
+│  └───────────────────────────────────┘  │
+└─────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────┐
+│      Next.js Server (Edge/Node)         │
+│  ┌───────────────────────────────────┐  │
+│  │   API Routes                      │  │
+│  │   - /api/cases/open               │  │
+│  │   - /api/provably-fair/seed       │  │
+│  └───────────────────────────────────┘  │
+│  ┌───────────────────────────────────┐  │
+│  │   Supabase Client (SSR)           │  │
+│  │   - Server: cookies-based auth    │  │
+│  │   - Client: browser storage       │  │
+│  └───────────────────────────────────┘  │
+└─────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────┐
+│         Supabase Backend                │
+│  ┌───────────────────────────────────┐  │
+│  │   PostgreSQL Database             │  │
+│  │   - Row Level Security (RLS)      │  │
+│  │   - Triggers & Functions          │  │
+│  └───────────────────────────────────┘  │
+│  ┌───────────────────────────────────┐  │
+│  │   Auth (GoTrue)                   │  │
+│  │   - Email/Password                │  │
+│  │   - Session Management            │  │
+│  └───────────────────────────────────┘  │
+└─────────────────────────────────────────┘
+```
+
+### Rendering Strategy
+
+- **Server Components** (default): Used for data fetching and static content
+- **Client Components**: Used for interactive UI elements with `'use client'` directive
+- **Server Actions**: Used for form submissions and mutations with `'use server'` directive
+- **API Routes**: Used for complex business logic like case opening
+
+## Folder Structure
+
+```
+source/
+├── app/                          # Next.js App Router pages
+│   ├── actions/                  # Server actions
+│   │   └── create-case.ts        # Admin case creation action
+│   ├── admin/                    # Admin pages
+│   │   └── create-case/          # Case creation UI
+│   ├── api/                      # API route handlers
+│   │   ├── cases/
+│   │   │   └── open/             # Case opening logic
+│   │   └── provably-fair/
+│   │       └── seed/             # Seed management
+│   ├── auth/                     # Authentication routes
+│   │   ├── callback/             # OAuth callback handler
+│   │   └── signout/              # Sign out handler
+│   ├── cases/
+│   │   └── [slug]/               # Dynamic case detail page
+│   ├── contact/                  # Contact page
+│   ├── faq/                      # FAQ page
+│   ├── login/                    # Login page and actions
+│   ├── privacy/                  # Privacy policy
+│   ├── profile/                  # User profile
+│   ├── provably-fair/            # Provably fair documentation
+│   ├── terms/                    # Terms of service
+│   ├── wallet/                   # Wallet management
+│   ├── layout.tsx                # Root layout (auth, theme, nav)
+│   ├── page.tsx                  # Home page
+│   └── globals.css               # Global styles
+├── components/                   # React components
+│   ├── admin/                    # Admin-specific components
+│   │   └── create-case-form.tsx  # Case creation form
+│   ├── auth-modal.tsx            # Authentication modal
+│   ├── case-browser.tsx          # Case browsing grid
+│   ├── case-card.tsx             # Individual case card
+│   ├── case-contents.tsx         # Case items display
+│   ├── case-opener.tsx           # Case opening animation
+│   ├── footer.tsx                # Page footer
+│   ├── header.tsx                # Page header
+│   ├── modal-provider.tsx        # Modal context
+│   ├── navbar.tsx                # Navigation bar
+│   ├── sidebar.tsx               # Side navigation
+│   └── theme-provider.tsx        # Dark/light theme
+├── lib/                          # Utility libraries
+│   ├── supabase/
+│   │   ├── client.ts             # Browser Supabase client
+│   │   └── server.ts             # Server Supabase client
+│   ├── provably-fair.ts          # Fair gaming algorithms
+│   ├── utils.ts                  # General utilities
+│   └── image-utils.ts            # Image handling
+├── types/                        # TypeScript types
+│   └── supabase.ts               # Auto-generated DB types
+├── supabase/                     # Supabase configuration
+│   └── migrations/               # Database migrations
+│       ├── 20240101000000_init.sql
+│       ├── 0000_create_cases_system.sql
+│       ├── 20251205120000_fix_case_items_schema.sql
+│       └── 20251209000000_create_provably_fair.sql
+├── public/                       # Static assets
+├── next.config.ts                # Next.js configuration
+├── tailwind.config.js            # Tailwind configuration
+├── tsconfig.json                 # TypeScript configuration
+└── package.json                  # Dependencies
+```
+
+## Key Design Decisions
+
+### Authentication Flow
+
+1. Users sign up/login through Supabase Auth
+2. Session cookies are managed by `@supabase/ssr` for both client and server
+3. User profiles are automatically created via database trigger
+4. Row Level Security ensures users can only access their own data
+
+### Supabase Client Pattern
+
+Two separate client creation functions maintain proper SSR:
+
+```typescript
+// Server-side (app/lib/supabase/server.ts)
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+export async function createClient() {
+  const cookieStore = await cookies()
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll(), ... } }
+  )
+}
+```
+
+```typescript
+// Client-side (app/lib/supabase/client.ts)
+import { createBrowserClient } from '@supabase/ssr'
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}
+```
+
+### Server Actions
+
+Server Actions provide type-safe form handling:
+
+```typescript
+// app/login/actions.ts
+'use server'
+
+export async function login(formData: FormData) {
+  const supabase = await createClient()
+  const { error } = await supabase.auth.signInWithPassword({
+    email: formData.get('email') as string,
+    password: formData.get('password') as string,
+  })
+  if (error) return { error: error.message }
+  redirect('/')
+}
+```
+
+### Type Safety
+
+Supabase automatically generates TypeScript types from the database schema (`types/supabase.ts`), ensuring compile-time type checking for all database operations.
+
+## Performance Optimizations
+
+- **React Compiler**: Automatic optimization of React components
+- **Server Components**: Reduced JavaScript bundle size
+- **Image Optimization**: Next.js automatic image optimization
+- **Code Splitting**: Automatic route-based code splitting
+- **Database Indexes**: Proper indexing on foreign keys and frequently queried columns
+
+## Security Measures
+
+- **Row Level Security**: All database tables have RLS policies
+- **Environment Variables**: Sensitive keys stored in environment variables
+- **HTTPS Only**: Enforced in production
+- **CSRF Protection**: Built into Next.js
+- **XSS Prevention**: React's automatic escaping
+- **SQL Injection Protection**: Parameterized queries via Supabase client
+
+## Development Workflow
+
+```bash
+# Install dependencies
+npm install
+
+# Run development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Start production server
+npm start
+
+# Run linter
+npm run lint
+```
+
+## Environment Variables
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=your-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+## Related Documentation
+
+- [Database Schema](/technical/database-schema) - Detailed database structure
+- [Authentication](/technical/authentication) - Auth implementation details
+- [Provably Fair System](/technical/provably-fair/overview) - Fair gaming algorithms

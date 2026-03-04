@@ -1,0 +1,516 @@
+---
+title: 'Wallet System'
+description: 'Balance management, deposits, withdrawals, and transaction tracking'
+icon: 'wallet'
+---
+
+## Overview
+
+The wallet system manages user balances, tracks all financial transactions, and handles deposits and withdrawals. All monetary values are stored in ARS (Argentine Pesos) with numeric precision to prevent rounding errors.
+
+<Info>
+The system uses PostgreSQL's `numeric` type for currency values, ensuring precise decimal arithmetic without floating-point errors.
+</Info>
+
+## Database Schema
+
+### Users Table
+
+User profiles include balance tracking:
+
+```sql
+create table public.users (
+  id uuid references auth.users not null primary key,
+  username text unique,
+  avatar_url text,
+  balance numeric default 0,  -- Current wallet balance in ARS
+  client_seed text,
+  nonce integer default 0,
+  created_at timestamp with time zone default now() not null
+)
+```
+
+### Transactions Table
+
+All balance changes are recorded:
+
+```sql
+create table public.transactions (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.users not null,
+  amount numeric not null,      -- Can be positive or negative
+  type text not null,           -- deposit, withdraw, case_open, item_sell
+  reference_id uuid,            -- Links to case or item
+  created_at timestamp with time zone default now() not null
+)
+```
+
+<CardGroup cols={4}>
+  <Card title="deposit" icon="arrow-down">
+    Money added to wallet
+  </Card>
+  <Card title="withdraw" icon="arrow-up">
+    Money taken from wallet
+  </Card>
+  <Card title="case_open" icon="box-open">
+    Balance deducted for opening case
+  </Card>
+  <Card title="item_sell" icon="sack-dollar">
+    Balance added from selling item
+  </Card>
+</CardGroup>
+
+## Transaction Types
+
+### Case Opening
+
+When a user opens a case, the balance is deducted:
+
+```typescript
+// In app/api/cases/open/route.ts
+
+// 1. Check if user has sufficient balance
+const { data: user } = await supabase
+  .from('users')
+  .select('balance')
+  .eq('id', user.id)
+  .single()
+
+if (user.balance < box.price) {
+  return NextResponse.json(
+    { error: 'Insufficient balance' }, 
+    { status: 400 }
+  )
+}
+
+// 2. Deduct balance
+await supabase
+  .from('users')
+  .update({ 
+    balance: user.balance - box.price 
+  })
+  .eq('id', user.id)
+
+// 3. Record transaction
+await supabase.from('transactions').insert({
+  user_id: user.id,
+  amount: -box.price,  // Negative for deduction
+  type: 'case_open',
+  reference_id: caseId
+})
+```
+
+<Warning>
+**Race Condition Risk**: The current implementation has a potential race condition between checking balance and updating it. Consider using database-level constraints or row locking.
+</Warning>
+
+### Item Selling
+
+When selling an item from inventory:
+
+```typescript
+// Proposed implementation
+
+export async function POST(request: Request) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  const { itemId } = await request.json()
+  
+  // 1. Fetch the user item
+  const { data: userItem } = await supabase
+    .from('user_items')
+    .select('*, items(*)')
+    .eq('id', itemId)
+    .eq('user_id', user.id)
+    .eq('status', 'in_inventory')
+    .single()
+  
+  if (!userItem) {
+    return NextResponse.json(
+      { error: 'Item not found' },
+      { status: 404 }
+    )
+  }
+  
+  const itemValue = userItem.items.price
+  
+  // 2. Update item status
+  await supabase
+    .from('user_items')
+    .update({ status: 'sold' })
+    .eq('id', itemId)
+  
+  // 3. Add to balance
+  const { data: currentUser } = await supabase
+    .from('users')
+    .select('balance')
+    .eq('id', user.id)
+    .single()
+  
+  await supabase
+    .from('users')
+    .update({ 
+      balance: currentUser.balance + itemValue 
+    })
+    .eq('id', user.id)
+  
+  // 4. Record transaction
+  await supabase.from('transactions').insert({
+    user_id: user.id,
+    amount: itemValue,  // Positive for addition
+    type: 'item_sell',
+    reference_id: userItem.item_id
+  })
+  
+  return NextResponse.json({ 
+    success: true,
+    new_balance: currentUser.balance + itemValue 
+  })
+}
+```
+
+### Deposits
+
+External deposits (via payment gateway):
+
+```typescript
+// Webhook handler from payment provider
+
+export async function POST(request: Request) {
+  const { userId, amount, transactionId } = await request.json()
+  
+  // Verify webhook signature (implementation depends on provider)
+  // ...
+  
+  const supabase = await createClient()
+  
+  // Add to balance
+  const { data: user } = await supabase
+    .from('users')
+    .select('balance')
+    .eq('id', userId)
+    .single()
+  
+  await supabase
+    .from('users')
+    .update({ 
+      balance: user.balance + amount 
+    })
+    .eq('id', userId)
+  
+  // Record transaction
+  await supabase.from('transactions').insert({
+    user_id: userId,
+    amount: amount,
+    type: 'deposit',
+    reference_id: transactionId  // External payment ID
+  })
+}
+```
+
+### Withdrawals
+
+User-initiated withdrawals:
+
+```typescript
+export async function POST(request: Request) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  const { amount, paymentMethod } = await request.json()
+  
+  // 1. Validate withdrawal amount
+  const MIN_WITHDRAWAL = 1000  // Minimum 1000 ARS
+  if (amount < MIN_WITHDRAWAL) {
+    return NextResponse.json(
+      { error: `Minimum withdrawal is ${MIN_WITHDRAWAL} ARS` },
+      { status: 400 }
+    )
+  }
+  
+  // 2. Check balance
+  const { data: userData } = await supabase
+    .from('users')
+    .select('balance')
+    .eq('id', user.id)
+    .single()
+  
+  if (userData.balance < amount) {
+    return NextResponse.json(
+      { error: 'Insufficient balance' },
+      { status: 400 }
+    )
+  }
+  
+  // 3. Deduct balance
+  await supabase
+    .from('users')
+    .update({ 
+      balance: userData.balance - amount 
+    })
+    .eq('id', user.id)
+  
+  // 4. Record transaction
+  const { data: transaction } = await supabase
+    .from('transactions')
+    .insert({
+      user_id: user.id,
+      amount: -amount,  // Negative for withdrawal
+      type: 'withdraw',
+      reference_id: null  // Will be updated when processed
+    })
+    .select()
+    .single()
+  
+  // 5. Initiate external withdrawal (queue for processing)
+  // await processWithdrawal(transaction.id, paymentMethod)
+  
+  return NextResponse.json({ 
+    success: true,
+    transaction_id: transaction.id 
+  })
+}
+```
+
+## Currency Formatting
+
+The app uses a utility function to format amounts:
+
+```typescript lib/utils.ts
+export function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  }).format(amount)
+}
+
+// Usage:
+formatCurrency(5000)     // "$ 5.000"
+formatCurrency(2500.50)  // "$ 2.500,50"
+```
+
+## Row Level Security
+
+PostgreSQL RLS policies ensure data privacy:
+
+```sql
+-- Users can view their own transactions
+create policy "Users can view own transactions"
+  on public.transactions for select
+  using (auth.uid() = user_id);
+
+-- Users can view their own profile
+create policy "Users can update own profile"
+  on public.users for update
+  using (auth.uid() = id);
+```
+
+<Info>
+RLS policies are enforced at the database level, preventing unauthorized access even if application code has bugs.
+</Info>
+
+## Account Balance Display
+
+Showing balance in the UI:
+
+```typescript components/balance-display.tsx
+'use client'
+
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { formatCurrency } from '@/lib/utils'
+
+export function BalanceDisplay() {
+  const [balance, setBalance] = useState<number>(0)
+  const supabase = createClient()
+  
+  useEffect(() => {
+    async function fetchBalance() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      
+      const { data } = await supabase
+        .from('users')
+        .select('balance')
+        .eq('id', user.id)
+        .single()
+      
+      if (data) setBalance(data.balance)
+    }
+    
+    fetchBalance()
+    
+    // Subscribe to changes
+    const channel = supabase
+      .channel('balance-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'users'
+        },
+        (payload) => {
+          setBalance(payload.new.balance)
+        }
+      )
+      .subscribe()
+    
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [])
+  
+  return (
+    <div className="flex items-center gap-2">
+      <img src="https://flagcdn.com/w20/ar.png" alt="ARS" />
+      <span className="font-bold">
+        {formatCurrency(balance)}
+      </span>
+    </div>
+  )
+}
+```
+
+<Check>
+**Real-time Updates**: Uses Supabase Realtime to automatically update balance when it changes in the database.
+</Check>
+
+## Transaction History
+
+Querying transaction history:
+
+```typescript
+const { data: transactions } = await supabase
+  .from('transactions')
+  .select('*')
+  .eq('user_id', user.id)
+  .order('created_at', { ascending: false })
+  .limit(50)
+
+// Returns:
+// [
+//   {
+//     id: "uuid",
+//     amount: -500,
+//     type: "case_open",
+//     created_at: "2026-03-04T10:30:00Z"
+//   },
+//   {
+//     id: "uuid",
+//     amount: 2500,
+//     type: "item_sell",
+//     created_at: "2026-03-04T10:25:00Z"
+//   }
+// ]
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Database Transactions">
+    When updating balance and recording transaction, wrap in a database transaction to ensure atomicity:
+    
+    ```sql
+    BEGIN;
+    UPDATE users SET balance = balance - 500 WHERE id = $1;
+    INSERT INTO transactions (user_id, amount, type) VALUES ($1, -500, 'case_open');
+    COMMIT;
+    ```
+  </Accordion>
+  
+  <Accordion title="Implement Idempotency">
+    For deposits/withdrawals, use idempotency keys to prevent duplicate processing if webhook is called multiple times.
+  </Accordion>
+  
+  <Accordion title="Audit Logs">
+    Consider adding an `admin_logs` table to track all balance modifications, including who made the change and why.
+  </Accordion>
+  
+  <Accordion title="Negative Balance Prevention">
+    Add database constraint to prevent negative balance:
+    
+    ```sql
+    ALTER TABLE users ADD CONSTRAINT positive_balance 
+    CHECK (balance >= 0);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Error Handling
+
+<CodeGroup>
+```typescript Insufficient Balance
+if (user.balance < casePrice) {
+  return NextResponse.json(
+    { 
+      error: 'Insufficient balance',
+      current_balance: user.balance,
+      required: casePrice,
+      shortage: casePrice - user.balance
+    }, 
+    { status: 400 }
+  )
+}
+```
+
+```typescript Minimum Amount
+const MIN_DEPOSIT = 500
+if (amount < MIN_DEPOSIT) {
+  return NextResponse.json(
+    { error: `Minimum deposit is ${formatCurrency(MIN_DEPOSIT)}` },
+    { status: 400 }
+  )
+}
+```
+</CodeGroup>
+
+## Payment Integration
+
+The system is designed to integrate with payment gateways like:
+
+<CardGroup cols={2}>
+  <Card title="Mercado Pago" icon="credit-card">
+    Popular in Argentina, supports ARS directly
+  </Card>
+  <Card title="PayPal" icon="paypal" color="#0070ba">
+    International option with currency conversion
+  </Card>
+  <Card title="Crypto" icon="bitcoin">
+    USDT/Bitcoin for anonymous transactions
+  </Card>
+  <Card title="Bank Transfer" icon="building-columns">
+    Direct transfer for large amounts
+  </Card>
+</CardGroup>
+
+## Future Enhancements
+
+<Steps>
+  <Step title="Transaction Limits">
+    Implement daily/weekly withdrawal limits for security
+  </Step>
+  <Step title="KYC Verification">
+    Require identity verification for large withdrawals
+  </Step>
+  <Step title="Multi-Currency">
+    Support USD, EUR alongside ARS
+  </Step>
+  <Step title="Bonus System">
+    Promotional bonuses with wagering requirements
+  </Step>
+</Steps>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="User Inventory" icon="box" href="/features/user-inventory">
+    Learn how items are stored and managed
+  </Card>
+  <Card title="Case Opening" icon="box-open" href="/features/case-opening">
+    See how case purchases deduct balance
+  </Card>
+</CardGroup>
